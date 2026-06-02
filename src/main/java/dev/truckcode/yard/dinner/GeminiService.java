@@ -10,6 +10,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.net.http.HttpClient;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -21,6 +22,9 @@ public class GeminiService {
 
     @Value("${gemini.api.key:}")
     private String apiKey;
+
+    @Value("${gemini.mock:false}")
+    private boolean mock;
 
     private static final String GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
@@ -35,6 +39,10 @@ public class GeminiService {
     }
 
     public GeminiResult generateRecipe(List<String> ingredients) {
+
+        if (mock) {
+            return new GeminiResult.Success(mockRecipe(ingredients));
+        }
 
         if (apiKey.isBlank()) {
             return new GeminiResult.Failure(new IllegalStateException("Gemini API key not configured"));
@@ -89,5 +97,21 @@ public class GeminiService {
             return new GeminiResult.Failure(e);
         }
 
+    }
+
+    // Local testing only — enabled via gemini.mock=true, skips the real API.
+    private Recipe mockRecipe(List<String> ingredients) {
+        var lead = ingredients.get(0);
+        var recipe = new Recipe();
+        recipe.setTitle("Quick " + lead + " skillet");
+        recipe.setIngredients(new ArrayList<>(ingredients.stream()
+                .map(name -> new Ingredient(name, "to taste", "a handful of " + name, "FRESH"))
+                .toList()));
+        recipe.setMethod(new ArrayList<>(List.of(
+                "Prep the " + lead + " and the rest of your ingredients.",
+                "Heat a little oil in a pan over medium.",
+                "Add everything and cook until it looks done.",
+                "Season with salt and pepper, then serve.")));
+        return recipe;
     }
 }
