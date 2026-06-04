@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+  <title>Shunt</title>
+  <link rel="stylesheet" th:href="@{/css/main.css}">
+  <style>
+    #screen {
+      image-rendering: pixelated;
+      /* scale the framebuffer up, keep crisp */
+      width: 768px;
+      height: auto;
+      /* keep the canvas's aspect ratio */
+      max-width: 92vw;
+      background: #111;
+      display: block;
+      margin: 1rem auto;
+      cursor: crosshair;
+    }
+  </style>
+</head>
+
+<body>
+  <div th:insert="~{fragments/header :: header}"></div>
+  <header th:insert="~{fragments/nav :: nav}"></header>
+
+  <!-- Framebuffer resolution lives here, on the canvas. shunt.js reads these
+       and passes them into the wasm app, which targets them. Change freely. -->
+  <canvas id="screen" width="192" height="108"></canvas>
+
+  <script type="module" th:src="@{/shunt/shunt.js}"></script>
+
+  <main>
+    <h2>About Shunt</h2>
+    <p>Work in progress. A small arcade game compiled from C to WebAssembly: the
+      browser owns the clock, the canvas size, and the pixels; the C core owns the rules.
+      Click the canvas to see input land; the heartbeat confirms ticks are flowing.</p>
+  </main>
+
+</body>
+
+</html>

@@ -21,4 +21,9 @@ public class WebController {
     return "simulator";
   }
 
+  @GetMapping("/shunt")
+  public String shunt() {
+    return "shunt";
+  }
+
 }
