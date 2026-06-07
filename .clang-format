@@ -1,0 +1,9 @@
+# Same-line (K&R) braces, 4-space indent. Overrides the extension's
+# Visual Studio fallback, which put opening braces on their own line.
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 0
+BreakBeforeBraces: Attach
+ReflowComments: false
