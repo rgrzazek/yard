@@ -2,8 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-// Shunt — core. The browser owns the clock and the canvas size;
-// C owns the rules. Boundary:
+// Shunt — core. The browser owns the clock; C owns the rules.
 //   init(seed)  start a run at the page-chosen framebuffer size
 //   tick()            advance the simulation by exactly one step
 //   click(x, y)       feed one input (framebuffer pixel coords)
@@ -17,22 +16,18 @@
 
 #define GAME_W 20
 #define GAME_H 20
+#define NUM_TILES GAME_W *GAME_H
 #define GRID_W (WIDTH / GAME_W)
 #define GRID_H (HEIGHT / GAME_H)
 
-static uint8_t fb[WIDTH * HEIGHT * 4]; // RGBA
+#define MAX_BOXES 10
 
-void draw_background();
-void draw_line(int x0, int y0, int x1, int y1, uint8_t r, uint8_t g, uint8_t b);
-void put_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b);
-void fill_rect(int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b);
-void draw_tile(int x, int y);
+static uint8_t fb[WIDTH * HEIGHT * 4]; // RGBA
 
 // ── State: everything the simulation *is*. Reset by init(), mutated only by
 //    tick() and click().
 static struct
 {
-    int w, h; // active framebuffer size, chosen by the page at init
     uint32_t tick;
     int cursor_x, cursor_y; // placeholder: last click, so you can see input land
     int has_cursor;
@@ -45,23 +40,61 @@ EMSCRIPTEN_KEEPALIVE uint8_t *framebuffer(void) { return fb; } // address in was
 typedef struct
 {
     uint8_t type;
-    uint8_t direction;
+    uint8_t dir;
     uint8_t flags;
+    uint16_t centre_x;
+    uint16_t centre_y;
 } Tile;
 
 typedef struct
 {
-    float x;
-    float y;
+    int x;
+    int y;
     uint8_t color;
     uint8_t active;
 } Box;
 
-static Tile map[GAME_W * GAME_H];
-static Box box[10];
+typedef enum {
+    COLOUR_RED,
+    COLOUR_BLUE,
+    COLOUR_GREEN,
+    COLOUR_YELLOW,
+    COLOUR_WHITE,
+    COLOUR_COUNT // final index is the number of actual colours
+} Colour;
+
+typedef enum {
+    UP,
+    RIGHT,
+    DOWN,
+    LEFT
+} Dirs;
+
+void draw_background();
+void draw_line(int x0, int y0, int x1, int y1, uint8_t r, uint8_t g, uint8_t b);
+void put_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b);
+void fill_rect(int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b);
+void draw_tile(int x, int y);
+void draw_boxes();
+int get_grid(Box box);
+
+static Tile tiles[GAME_W * GAME_H];
+static Box box[MAX_BOXES];
 
 void load_level() {
     int r = rand();
+    for (int i = 0; i < MAX_BOXES; i++) {
+        box[i].x = rand() % (WIDTH);
+        box[i].y = rand() % (HEIGHT);
+        box[i].active = 1;
+        box[i].color = rand() % (COLOUR_COUNT);
+    }
+
+    for (int i = 0; i < NUM_TILES; i++) {
+        tiles[i].dir = i % 3;
+        tiles[i].centre_x = (i % GAME_W * GRID_W) + (GRID_W / 2);
+        tiles[i].centre_y = (i / GAME_W * GRID_H) + (GRID_H / 2);
+    }
 }
 
 EMSCRIPTEN_KEEPALIVE void init(uint32_t seed) {
@@ -71,11 +104,35 @@ EMSCRIPTEN_KEEPALIVE void init(uint32_t seed) {
 
 static void update(void) {
     S.tick++;
+    for (int i = 0; i < MAX_BOXES; i++) {
+        Tile this_tile = tiles[get_grid(box[i])];
+        int dir = this_tile.dir;
+        int tile_x = this_tile.centre_x;
+        int tile_y = this_tile.centre_y;
+
+        if ((dir == UP || dir == DOWN) && box[i].x != tile_x) {
+            box[i].x += box[i].x < tile_x ? 1 : -1;
+            continue;
+        }
+        if ((dir == LEFT || dir == RIGHT) && box[i].y != tile_y) {
+            box[i].y += box[i].y < tile_y ? 1 : -1;
+            continue;
+        }
+        if (dir == UP)
+            box[i].y = (box[i].y - 1 + HEIGHT) % HEIGHT;
+        if (dir == RIGHT)
+            box[i].x = (box[i].x + 1) % WIDTH;
+        if (dir == DOWN)
+            box[i].y = (box[i].y + 1) % HEIGHT;
+        if (dir == LEFT)
+            box[i].x = (box[i].x - 1 + WIDTH) % WIDTH;
+    }
 }
 
 // Paint S into the framebuffer. Pure: depends only on S, never mutates it.
 static void render(void) {
     draw_background();
+    draw_boxes();
 }
 
 EMSCRIPTEN_KEEPALIVE void tick(void) {
@@ -94,11 +151,7 @@ EMSCRIPTEN_KEEPALIVE void click(int x, int y) {
 /* ****************************** DRAWING ****************************** */
 
 void draw_tile(int x, int y) {
-    int dir = (x + y) % 4;
-    int UP = 0;
-    int RIGHT = 1;
-    int DOWN = 2;
-    int LEFT = 3;
+    int dir = tiles[x + (GAME_W * y)].dir;
 
     x = x * GRID_W;
     y = y * GRID_H;
@@ -160,6 +213,23 @@ void draw_background() {
             draw_tile(x, y);
         }
     }
+}
+
+void draw_boxes() {
+    for (int i = 0; i < MAX_BOXES; i++) {
+        // Draw if box is active
+        if (!box[i].active) {
+            continue;
+        }
+        fill_rect(box[i].x - (GRID_W / 2), box[i].y - (GRID_H / 2), GRID_W, GRID_H, 200, 200, 200);
+    }
+}
+
+int get_grid(Box box) {
+    //
+    int x = box.x / GRID_W;
+    int y = box.y / GRID_H;
+    return x + (y * GAME_W);
 }
 
 // put_pixel clips, so line and fill are safe with off-screen coordinates.
