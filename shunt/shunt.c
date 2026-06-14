@@ -1,4 +1,5 @@
 #include <emscripten/emscripten.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -20,17 +21,20 @@
 #define GRID_W (WIDTH / GAME_W)
 #define GRID_H (HEIGHT / GAME_H)
 
+#define ORIGIN_X (10 * GRID_W)
+#define ORIGIN_Y (2 * GRID_H)
+
+#define FPS 60
 #define MAX_BOXES 10
+#define DELAY 3 * FPS
 
 static uint8_t fb[WIDTH * HEIGHT * 4]; // RGBA
 
-// ── State: everything the simulation *is*. Reset by init(), mutated only by
-//    tick() and click().
+// ── State: everything the simulation *is*. Mutated only by tick() and click().
 static struct
 {
     uint32_t tick;
-    int cursor_x, cursor_y; // placeholder: last click, so you can see input land
-    int has_cursor;
+    uint16_t delay; // gate to stop the next box appearing
 } S;
 
 EMSCRIPTEN_KEEPALIVE int fb_width(void) { return WIDTH; }
@@ -41,17 +45,17 @@ typedef struct
 {
     uint8_t type;
     uint8_t dir;
-    uint8_t flags;
     uint16_t centre_x;
     uint16_t centre_y;
+    uint8_t colour; // For exits
 } Tile;
 
 typedef struct
 {
     int x;
     int y;
-    uint8_t color;
-    uint8_t active;
+    uint8_t colour;
+    bool active;
 } Box;
 
 typedef enum {
@@ -70,13 +74,26 @@ typedef enum {
     LEFT
 } Dirs;
 
+typedef enum {
+    TILE_CONVEYOR,
+    TILE_ENTRY,
+    TILE_EXIT,
+    TILE_SWITCH,
+    TILE_INACTIVE
+} Tile_Type;
+
 void draw_background();
 void draw_line(int x0, int y0, int x1, int y1, uint8_t r, uint8_t g, uint8_t b);
 void put_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b);
 void fill_rect(int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b);
-void draw_tile(int x, int y);
+void draw_tile(Tile tile);
 void draw_boxes();
 int get_grid(Box box);
+
+static void load_level_1(void);
+
+static int tile_index(int px, int py);
+static Tile *tile_at(int px, int py);
 
 static Tile tiles[GAME_W * GAME_H];
 static Box box[MAX_BOXES];
@@ -87,25 +104,45 @@ void load_level() {
         box[i].x = rand() % (WIDTH);
         box[i].y = rand() % (HEIGHT);
         box[i].active = 1;
-        box[i].color = rand() % (COLOUR_COUNT);
-    }
-
-    for (int i = 0; i < NUM_TILES; i++) {
-        tiles[i].dir = i % 3;
-        tiles[i].centre_x = (i % GAME_W * GRID_W) + (GRID_W / 2);
-        tiles[i].centre_y = (i / GAME_W * GRID_H) + (GRID_H / 2);
+        box[i].colour = rand() % (COLOUR_COUNT);
     }
 }
 
 EMSCRIPTEN_KEEPALIVE void init(uint32_t seed) {
     srand(seed);
-    load_level();
+    load_level_1();
+    // load_level();
+    for (int i = 0; i < NUM_TILES; i++) {
+        tiles[i].centre_x = (i % GAME_W * GRID_W) + (GRID_W / 2);
+        tiles[i].centre_y = (i / GAME_W * GRID_H) + (GRID_H / 2);
+    }
 }
 
 static void update(void) {
     S.tick++;
+    if (S.delay < 1) {
+        for (int i = 0; i < MAX_BOXES; i++) {
+            if (box[i].active) {
+                continue;
+            }
+            box[i].x = ORIGIN_X;
+            box[i].y = ORIGIN_Y;
+            box[i].active = 1;
+            box[i].colour = rand() % (COLOUR_COUNT);
+            break;
+        }
+        S.delay = DELAY;
+    }
+    S.delay -= 1;
+
     for (int i = 0; i < MAX_BOXES; i++) {
         Tile this_tile = tiles[get_grid(box[i])];
+
+        if (this_tile.type == TILE_EXIT) {
+            box[i].active = false;
+            continue;
+        }
+
         int dir = this_tile.dir;
         int tile_x = this_tile.centre_x;
         int tile_y = this_tile.centre_y;
@@ -142,19 +179,82 @@ EMSCRIPTEN_KEEPALIVE void tick(void) {
 
 EMSCRIPTEN_KEEPALIVE void click(int x, int y) {
     if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT)
-        return; // ignore out-of-bounds
-    S.cursor_x = x;
-    S.cursor_y = y;
-    S.has_cursor = 1;
+        return;
+    Tile *t = tile_at(x, y);
+    if (t->type != TILE_SWITCH)
+        return;
+    t->dir = (t->dir + 1) % 4;
 }
 
+/* ****************************** LEVELS  ****************************** */
+static void set_tile(int x, int y, uint8_t type, uint8_t dir) {
+    int i = x + y * GAME_W;
+    tiles[i].type = type;
+    tiles[i].dir = dir;
+}
+
+static void load_level_1(void) {
+    // Standard reset: everything inactive.
+    for (int i = 0; i < NUM_TILES; i++) {
+        tiles[i].type = TILE_INACTIVE;
+    }
+
+    for (int col = 2; col <= 16; col++) {
+        set_tile(10, col, TILE_CONVEYOR, DOWN);
+    }
+    set_tile(10, 17, TILE_EXIT, 0);
+
+    set_tile(2, 10, TILE_EXIT, 0);
+    for (int row = 3; row <= 9; row++) {
+        set_tile(row, 10, TILE_CONVEYOR, LEFT);
+    }
+    set_tile(10, 10, TILE_SWITCH, DOWN); // intersection
+
+    for (int row = 11; row <= 16; row++) {
+        set_tile(row, 10, TILE_CONVEYOR, RIGHT);
+    }
+    set_tile(17, 10, TILE_EXIT, 0);
+}
 /* ****************************** DRAWING ****************************** */
 
-void draw_tile(int x, int y) {
-    int dir = tiles[x + (GAME_W * y)].dir;
+typedef struct {
+    uint8_t r, g, b;
+} RGB;
 
-    x = x * GRID_W;
-    y = y * GRID_H;
+static const RGB COLOURS[COLOUR_COUNT] = {
+    [COLOUR_RED] = {200, 50, 50},
+    [COLOUR_BLUE] = {50, 50, 200},
+    [COLOUR_GREEN] = {50, 200, 50},
+    [COLOUR_YELLOW] = {200, 220, 0},
+    [COLOUR_WHITE] = {150, 150, 150},
+};
+
+static int tile_index(int x, int y) {
+    return (x / GRID_W) + (y / GRID_H) * GAME_W;
+}
+
+static Tile *tile_at(int x, int y) {
+    return &tiles[tile_index(x, y)];
+}
+
+void draw_tile(Tile tile) {
+    if (tile.type != TILE_CONVEYOR && tile.type != TILE_SWITCH && tile.type != TILE_EXIT) {
+        return;
+    }
+    int dir = tile.dir;
+
+    int x = tile.centre_x - (GRID_W / 2);
+    int y = tile.centre_y - (GRID_H / 2);
+
+    if (tile.type == TILE_EXIT) {
+        RGB c = COLOURS[tile.colour];
+        fill_rect(x, y, GRID_W, GRID_H, c.r, c.g, c.b);
+        return;
+    }
+
+    if (tile.type == TILE_SWITCH) {
+        fill_rect(x, y, GRID_W, GRID_H, 50, 200, 50);
+    }
 
     draw_line(x, y, x + GRID_W - 1, y, 0, 0, 0);
     draw_line(x, y, x, y + GRID_H - 1, 0, 0, 0);
@@ -208,10 +308,8 @@ void draw_background() {
         }
     }
 
-    for (int x = 0; x < 20; x++) {
-        for (int y = 0; y < 20; y++) {
-            draw_tile(x, y);
-        }
+    for (int i = 0; i < GAME_W * GAME_H; i++) {
+        draw_tile(tiles[i]);
     }
 }
 
@@ -221,15 +319,13 @@ void draw_boxes() {
         if (!box[i].active) {
             continue;
         }
-        fill_rect(box[i].x - (GRID_W / 2), box[i].y - (GRID_H / 2), GRID_W, GRID_H, 200, 200, 200);
+        RGB c = COLOURS[box[i].colour];
+        fill_rect(box[i].x - (GRID_W / 2), box[i].y - (GRID_H / 2), GRID_W, GRID_H, c.r, c.g, c.b);
     }
 }
 
 int get_grid(Box box) {
-    //
-    int x = box.x / GRID_W;
-    int y = box.y / GRID_H;
-    return x + (y * GAME_W);
+    return tile_index(box.x, box.y);
 }
 
 // put_pixel clips, so line and fill are safe with off-screen coordinates.
