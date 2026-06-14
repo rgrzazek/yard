@@ -52,4 +52,28 @@ function frame(now) {
   blit();
   requestAnimationFrame(frame);
 }
+
+// Sprites: decode PNGs and write their RGBA into wasm memory.
+// Order must match the SpriteId enum in shunt.c: tiles align with Dirs,
+// boxes with Colour.
+const SPRITES = [
+  'up.png', 'right.png', 'down.png', 'left.png',
+  'red.png', 'blue.png', 'green.png', 'yellow.png', 'white.png',
+  'switch-up.png', 'switch-right.png', 'switch-down.png', 'switch-left.png',
+];
+async function uploadSprite(id, name) {
+  const img = new Image();
+  img.src = `/shunt/${name}`;
+  await img.decode();
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const off = document.createElement('canvas');
+  off.width = w; off.height = h;
+  const octx = off.getContext('2d');
+  octx.drawImage(img, 0, 0);
+  const data = octx.getImageData(0, 0, w, h).data;   // straight RGBA, w*h*4
+  new Uint8Array(wasm.memory.buffer, wasm.sprite_ptr(id), w * h * 4).set(data);
+  wasm.set_sprite_size(id, w, h);
+}
+await Promise.all(SPRITES.map((name, id) => uploadSprite(id, name)));
+
 requestAnimationFrame(frame);

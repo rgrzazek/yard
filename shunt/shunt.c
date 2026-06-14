@@ -11,18 +11,30 @@
 //
 // There is no time in here, ticks provided by browser.
 
-#define WIDTH 1000
-#define HEIGHT 1000
+#define WIDTH 1280
+#define HEIGHT 720
 #define PIXEL(X, Y) (((Y) * (WIDTH) + (X)) * 4)
 
 #define GAME_W 20
 #define GAME_H 20
 #define NUM_TILES GAME_W *GAME_H
-#define GRID_W (WIDTH / GAME_W)
-#define GRID_H (HEIGHT / GAME_H)
 
-#define ORIGIN_X (10 * GRID_W)
-#define ORIGIN_Y (2 * GRID_H)
+// Isometric projection: 2:1
+// UP -> top-left (toward 0,0), DOWN -> bottom-right.
+#define HX 32           // half tile width  (2 ...)
+#define HY 16           // half tile height (... 1)
+#define TILE_W (HX * 2) // sprite art size: 64
+#define TILE_H (HY * 2) // 32
+#define OX 0            // board offset within the framebuffer
+#define OY 360
+
+#define SUBTILE 100                // virtual units per tile edge
+#define WORLD_W (GAME_W * SUBTILE) // 2000
+#define WORLD_H (GAME_H * SUBTILE)
+#define SPEED 2 // world units per tick (100u = 50px, so 2u ≈ the old 1px/tick)
+
+#define ORIGIN_COL 10
+#define ORIGIN_ROW 2
 
 #define FPS 60
 #define MAX_BOXES 10
@@ -82,21 +94,87 @@ typedef enum {
     TILE_INACTIVE
 } Tile_Type;
 
+// ── Sprites. JS decodes each PNG and writes its RGBA into sprites[id].rgba at
+//    load, then reports its size (the write-direction mirror of framebuffer()).
+//    Ids are ordered so a tile id is SPR_TILE_UP + Dirs, a box id is
+//    SPR_BOX_RED + Colour — selection is just a base plus the enum value.
+typedef enum {
+    SPR_TILE_UP,
+    SPR_TILE_RIGHT,
+    SPR_TILE_DOWN,
+    SPR_TILE_LEFT, // align with Dirs
+    SPR_BOX_RED,
+    SPR_BOX_BLUE,
+    SPR_BOX_GREEN,
+    SPR_BOX_YELLOW,
+    SPR_BOX_WHITE, // align with Colour
+    SPR_SWITCH_UP,
+    SPR_SWITCH_RIGHT,
+    SPR_SWITCH_DOWN,
+    SPR_SWITCH_LEFT, // align with Dirs
+    SPR_COUNT
+} SpriteId;
+
+#define SPRITE_MAX (64 * 64 * 4) // generous per-sprite buffer
+
+typedef struct {
+    uint8_t rgba[SPRITE_MAX];
+    int w, h;
+} Sprite;
+
+static Sprite sprites[SPR_COUNT];
+
+EMSCRIPTEN_KEEPALIVE uint8_t *sprite_ptr(int id) { return sprites[id].rgba; }
+EMSCRIPTEN_KEEPALIVE void set_sprite_size(int id, int w, int h) {
+    sprites[id].w = w;
+    sprites[id].h = h;
+}
+
 void draw_background();
 void draw_line(int x0, int y0, int x1, int y1, uint8_t r, uint8_t g, uint8_t b);
 void put_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b);
 void fill_rect(int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b);
-void draw_tile(Tile tile);
+void draw_tile(Tile tile, int col, int row);
 void draw_boxes();
 int get_grid(Box box);
 
 static void load_level_1(void);
-
-static int tile_index(int px, int py);
-static Tile *tile_at(int px, int py);
+static void blit_sprite(int id, int dx, int dy);
 
 static Tile tiles[GAME_W * GAME_H];
 static Box box[MAX_BOXES];
+
+static int tile_centre(int t) { return t * SUBTILE + SUBTILE / 2; } // grid  -> world centre
+static int world_to_tile(int w) { return w / SUBTILE; }             // world -> grid
+
+typedef struct {
+    int x, y;
+} Pt;
+
+static Pt project(int wx, int wy) {
+    return (Pt){(wx + wy) * HX / SUBTILE + OX, (wy - wx) * HY / SUBTILE + OY};
+}
+
+// screen pixel -> tile index, or -1 if the click lands outside the board.
+static int click_to_tile(int sx, int sy) {
+    int u = (sx - OX) * SUBTILE / HX; // wx + wy
+    int v = (sy - OY) * SUBTILE / HY; // wy - wx
+    int wx = (u - v) / 2;
+    int wy = (u + v) / 2;
+    if (wx < 0 || wx >= WORLD_W || wy < 0 || wy >= WORLD_H)
+        return -1;
+    return world_to_tile(wx) + world_to_tile(wy) * GAME_W;
+}
+
+// step v toward target by up to SPEED, never overshooting — keeps == exact
+static int approach(int v, int target) {
+    int d = target - v;
+    if (d > SPEED)
+        return v + SPEED;
+    if (d < -SPEED)
+        return v - SPEED;
+    return target;
+}
 
 void load_level() {
     int r = rand();
@@ -113,8 +191,8 @@ EMSCRIPTEN_KEEPALIVE void init(uint32_t seed) {
     load_level_1();
     // load_level();
     for (int i = 0; i < NUM_TILES; i++) {
-        tiles[i].centre_x = (i % GAME_W * GRID_W) + (GRID_W / 2);
-        tiles[i].centre_y = (i / GAME_W * GRID_H) + (GRID_H / 2);
+        tiles[i].centre_x = tile_centre(i % GAME_W);
+        tiles[i].centre_y = tile_centre(i / GAME_W);
     }
 }
 
@@ -125,8 +203,8 @@ static void update(void) {
             if (box[i].active) {
                 continue;
             }
-            box[i].x = ORIGIN_X;
-            box[i].y = ORIGIN_Y;
+            box[i].x = tile_centre(ORIGIN_COL);
+            box[i].y = tile_centre(ORIGIN_ROW);
             box[i].active = 1;
             box[i].colour = rand() % (COLOUR_COUNT);
             break;
@@ -147,26 +225,27 @@ static void update(void) {
         int tile_x = this_tile.centre_x;
         int tile_y = this_tile.centre_y;
 
+        // Ensure orthogonal alignment with belt before moving the "correct" direction
         if ((dir == UP || dir == DOWN) && box[i].x != tile_x) {
-            box[i].x += box[i].x < tile_x ? 1 : -1;
+            box[i].x = approach(box[i].x, tile_x);
             continue;
         }
         if ((dir == LEFT || dir == RIGHT) && box[i].y != tile_y) {
-            box[i].y += box[i].y < tile_y ? 1 : -1;
+            box[i].y = approach(box[i].y, tile_y);
             continue;
         }
         if (dir == UP)
-            box[i].y = (box[i].y - 1 + HEIGHT) % HEIGHT;
+            box[i].y = (box[i].y - SPEED + WORLD_H) % WORLD_H; // mod doesn't like negative numbers
         if (dir == RIGHT)
-            box[i].x = (box[i].x + 1) % WIDTH;
+            box[i].x = (box[i].x + SPEED) % WORLD_W;
         if (dir == DOWN)
-            box[i].y = (box[i].y + 1) % HEIGHT;
+            box[i].y = (box[i].y + SPEED) % WORLD_H;
         if (dir == LEFT)
-            box[i].x = (box[i].x - 1 + WIDTH) % WIDTH;
+            box[i].x = (box[i].x - SPEED + WORLD_W) % WORLD_W;
     }
 }
 
-// Paint S into the framebuffer. Pure: depends only on S, never mutates it.
+// Paint into the framebuffer
 static void render(void) {
     draw_background();
     draw_boxes();
@@ -178,9 +257,10 @@ EMSCRIPTEN_KEEPALIVE void tick(void) {
 }
 
 EMSCRIPTEN_KEEPALIVE void click(int x, int y) {
-    if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT)
+    int idx = click_to_tile(x, y);
+    if (idx < 0)
         return;
-    Tile *t = tile_at(x, y);
+    Tile *t = &tiles[idx];
     if (t->type != TILE_SWITCH)
         return;
     t->dir = (t->dir + 1) % 4;
@@ -229,68 +309,32 @@ static const RGB COLOURS[COLOUR_COUNT] = {
     [COLOUR_WHITE] = {150, 150, 150},
 };
 
-static int tile_index(int x, int y) {
-    return (x / GRID_W) + (y / GRID_H) * GAME_W;
-}
-
-static Tile *tile_at(int x, int y) {
-    return &tiles[tile_index(x, y)];
-}
-
-void draw_tile(Tile tile) {
-    if (tile.type != TILE_CONVEYOR && tile.type != TILE_SWITCH && tile.type != TILE_EXIT) {
-        return;
+// filled diamond (TILE_W x TILE_H) centred at (cx,cy)... placeholder for sprites
+static void fill_diamond(int cx, int cy, uint8_t r, uint8_t g, uint8_t b) {
+    for (int dy = -HY; dy <= HY; dy++) {
+        int half = HX - HX * abs(dy) / HY; // width tapers linearly to the tips
+        for (int dx = -half; dx <= half; dx++)
+            put_pixel(cx + dx, cy + dy, r, g, b);
     }
-    int dir = tile.dir;
+}
 
-    int x = tile.centre_x - (GRID_W / 2);
-    int y = tile.centre_y - (GRID_H / 2);
+void draw_tile(Tile tile, int col, int row) {
+    if (tile.type != TILE_CONVEYOR && tile.type != TILE_SWITCH && tile.type != TILE_EXIT) {
+        return; // Remove guard when all the tiles are finished
+    }
+    Pt p = project(tile_centre(col), tile_centre(row));
 
     if (tile.type == TILE_EXIT) {
+        // no exit art yet
         RGB c = COLOURS[tile.colour];
-        fill_rect(x, y, GRID_W, GRID_H, c.r, c.g, c.b);
+        fill_diamond(p.x, p.y, c.r, c.g, c.b);
         return;
     }
 
-    if (tile.type == TILE_SWITCH) {
-        fill_rect(x, y, GRID_W, GRID_H, 50, 200, 50);
-    }
-
-    draw_line(x, y, x + GRID_W - 1, y, 0, 0, 0);
-    draw_line(x, y, x, y + GRID_H - 1, 0, 0, 0);
-    draw_line(x + GRID_W - 1, y, x + GRID_W - 1, y + GRID_H - 1, 0, 0, 0);
-    draw_line(x, y + GRID_H - 1, x + GRID_W - 1, y + GRID_H - 1, 0, 0, 0);
-
-    // for arrows
-    int x1 = x + (GRID_W / 2);
-    int x2 = x + (GRID_W * 3 / 4);
-    int x3 = x + (GRID_W / 2);
-    int x4 = x + (GRID_W / 4);
-    int y1 = y + (GRID_H / 4);
-    int y2 = y + (GRID_H / 2);
-    int y3 = y + (GRID_H * 3 / 4);
-    int y4 = y + (GRID_H / 2);
-
-    if (dir == LEFT || dir == RIGHT) {
-        draw_line(x2, y2, x4, y4, 255, 0, 0);
-    } else {
-        draw_line(x1, y1, x3, y3, 255, 0, 0);
-    }
-    if (dir == UP || dir == LEFT) {
-        draw_line(x4, y4, x1, y1, 255, 0, 0);
-    }
-    if (dir == UP || dir == RIGHT) {
-        draw_line(x2, y2, x1, y1, 255, 0, 0);
-    }
-    if (dir == DOWN || dir == RIGHT) {
-        draw_line(x2, y2, x3, y3, 255, 0, 0);
-    }
-    if (dir == DOWN || dir == RIGHT) {
-        draw_line(x2, y2, x3, y3, 255, 0, 0);
-    }
-    if (dir == DOWN || dir == LEFT) {
-        draw_line(x4, y4, x3, y3, 255, 0, 0);
-    }
+    // CONVEYOR / SWITCH: a directional sprite, centred on the diamond.
+    int base = (tile.type == TILE_SWITCH) ? SPR_SWITCH_UP : SPR_TILE_UP;
+    int id = base + tile.dir;
+    blit_sprite(id, p.x - sprites[id].w / 2, p.y - sprites[id].h / 2);
 }
 
 void draw_background() {
@@ -308,27 +352,54 @@ void draw_background() {
         }
     }
 
-    for (int i = 0; i < GAME_W * GAME_H; i++) {
-        draw_tile(tiles[i]);
+    // Non-switch tiles first.
+    for (int i = 0; i < NUM_TILES; i++) {
+        if (tiles[i].type == TILE_SWITCH)
+            continue;
+        draw_tile(tiles[i], i % GAME_W, i / GAME_W);
     }
+    // Switches last: the circular sprite overhangs neighbouring tiles, so it
+    // must paint after every adjacent tile is already down.
+    for (int i = 0; i < NUM_TILES; i++) {
+        if (tiles[i].type != TILE_SWITCH)
+            continue;
+        draw_tile(tiles[i], i % GAME_W, i / GAME_W);
+    }
+}
+
+// blit an RGBA sprite at (dx,dy); skip fully transparent pixels (1-bit alpha)
+static void blit(const uint8_t *src, int width, int height, int dx, int dy) {
+    for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++) {
+            const uint8_t *px = &src[(y * width + x) * 4];
+            if (px[3] == 0)
+                continue;
+            put_pixel(dx + x, dy + y, px[0], px[1], px[2]);
+        }
+}
+
+static void blit_sprite(int id, int dx, int dy) {
+    Sprite *s = &sprites[id];
+    blit(s->rgba, s->w, s->h, dx, dy);
 }
 
 void draw_boxes() {
     for (int i = 0; i < MAX_BOXES; i++) {
-        // Draw if box is active
         if (!box[i].active) {
             continue;
         }
-        RGB c = COLOURS[box[i].colour];
-        fill_rect(box[i].x - (GRID_W / 2), box[i].y - (GRID_H / 2), GRID_W, GRID_H, c.r, c.g, c.b);
+        Pt p = project(box[i].x, box[i].y);
+        int id = SPR_BOX_RED + box[i].colour;
+        // always anchor to bottom because boxes stick up over top of their tile
+        blit_sprite(id, p.x - sprites[id].w / 2, p.y + HY - sprites[id].h);
     }
 }
 
 int get_grid(Box box) {
-    return tile_index(box.x, box.y);
+    return world_to_tile(box.x) + world_to_tile(box.y) * GAME_W;
 }
 
-// put_pixel clips, so line and fill are safe with off-screen coordinates.
+// put_pixel, safe for out of range coordinates
 void put_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
     if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT)
         return;
@@ -340,6 +411,7 @@ void put_pixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
 }
 
 // Bresenham's line algorithm — integer-only, handles every octant.
+// Probably won't be required now I'm using sprites
 void draw_line(int x0, int y0, int x1, int y1, uint8_t r, uint8_t g, uint8_t b) {
     int dx = abs(x1 - x0);
     int sx = x0 < x1 ? 1 : -1;

@@ -13,6 +13,6 @@ set -e
 cd "$(dirname "$0")"
 out=../src/main/resources/static/shunt/shunt.wasm
 emcc shunt.c -O3 --no-entry -sSTANDALONE_WASM \
-  -sEXPORTED_FUNCTIONS=_fb_width,_fb_height,_framebuffer,_init,_tick,_click \
+  -sEXPORTED_FUNCTIONS=_fb_width,_fb_height,_framebuffer,_sprite_ptr,_set_sprite_size,_init,_tick,_click \
   -o "$out"
 echo "Built $out ($(wc -c < "$out" | tr -d ' ') bytes)"

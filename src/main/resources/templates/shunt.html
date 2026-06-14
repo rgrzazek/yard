@@ -7,11 +7,10 @@
   <style>
     #screen {
       image-rendering: pixelated;
-      /* scale the framebuffer up, keep crisp */
-      width: 768px;
-      height: auto;
-      /* keep the canvas's aspect ratio */
-      max-width: 92vw;
+      /* fit the content area */
+      width: min(calc(100vw - var(--nav-width) - 4rem),
+          calc((100vh - var(--header-height) - 4rem) * 16 / 9));
+      aspect-ratio: 16 / 9;
       background: #111;
       display: block;
       margin: 1rem auto;
@@ -24,16 +23,31 @@
   <div th:insert="~{fragments/header :: header}"></div>
   <header th:insert="~{fragments/nav :: nav}"></header>
 
-  <!-- Framebuffer resolution lives here, on the canvas. shunt.js reads these
-       and passes them into the wasm app, which targets them. Change freely. -->
-  <canvas id="screen" width="192" height="108"></canvas>
+  <canvas id="screen"></canvas>
 
   <script type="module" th:src="@{/shunt/shunt.js}"></script>
 
   <main>
     <h2>About Shunt</h2>
-    <p>Work in progress. A small arcade game compiled from C to WebAssembly: the
-      browser owns the clock, the C core owns the rules.</p>
+    <p>Shunt is a conveyor-routing puzzle. Boxes arrive at the top of the board and ride the belts. You click the
+      switches that direct them to their destinations. The browser only runs the clock; the C core owns the rules.</p>
+
+    <p>It's a tribute to <em>Global Player</em>, a mid-2000s Flash game for logistics company Dachser, where you sorted
+      colour-coded parcels onto the right trucks, trains, and planes. Finished, Shunt will be ten levels of rising
+      difficulty. Today it's a work in progress.</p>
+
+    <h3>Why C</h3>
+    <p>Not for speed, for the problem. I could build this in an afternoon with a good game engine, which is the reason
+      not to. C gives you nothing for free, so rendering is never <code>for box in boxes: box.draw()</code>. It's plain
+      functions reaching into plain structs and reading their state, without tangling everything up. I've learned a lot
+      by building tributes to classic games in Java Swing, JPanels, and Processing, but this is something different. The
+      game doesn't even have an image grid, just a flat array of hand-addressed pixels.</p>
+
+    <h3>What's been hard</h3>
+    <p>I've been caught out by little things continually: 8 bit integers overflowing, 32 bits per pixel, modulo of
+      negative numbers. I've had to refactor things as my model and view became coupled together. These are the little
+      things that a language without guardrails throws at you constantly, and there's nowhere to hide. Doing it the hard
+      way, in the open, is the point.</p>
   </main>
 
 </body>
