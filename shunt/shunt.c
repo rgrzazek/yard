@@ -1,44 +1,13 @@
-#include <emscripten/emscripten.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdlib.h>
+#include "shunt.h"
 
 // Shunt — core. The browser owns the clock; C owns the rules.
-//   init(seed)  start a run at the page-chosen framebuffer size
+//   init(seed)        start a run at the page-chosen framebuffer size
 //   tick()            advance the simulation by exactly one step
 //   click(x, y)       feed one input (framebuffer pixel coords)
 //   framebuffer()     RGBA bytes the browser blits; fb_width()/fb_height() report size
 //
 // There is no time in here, ticks provided by browser.
-
-#define WIDTH 1280
-#define HEIGHT 720
-#define PIXEL(X, Y) (((Y) * (WIDTH) + (X)) * 4)
-
-#define GAME_W 20
-#define GAME_H 20
-#define NUM_TILES GAME_W *GAME_H
-
-// Isometric projection: 2:1
-// UP -> top-left (toward 0,0), DOWN -> bottom-right.
-#define HX 32           // half tile width  (2 ...)
-#define HY 16           // half tile height (... 1)
-#define TILE_W (HX * 2) // sprite art size: 64
-#define TILE_H (HY * 2) // 32
-#define OX 0            // board offset within the framebuffer
-#define OY 360
-
-#define SUBTILE 100                // virtual units per tile edge
-#define WORLD_W (GAME_W * SUBTILE) // 2000
-#define WORLD_H (GAME_H * SUBTILE)
-#define SPEED 2 // world units per tick (100u = 50px, so 2u ≈ the old 1px/tick)
-
-#define ORIGIN_COL 10
-#define ORIGIN_ROW 2
-
-#define FPS 60
-#define MAX_BOXES 10
-#define DELAY 3 * FPS
+// Config and types live in shunt.h; levels in levels.inc (included below).
 
 static uint8_t fb[WIDTH * HEIGHT * 4]; // RGBA
 
@@ -53,75 +22,8 @@ EMSCRIPTEN_KEEPALIVE int fb_width(void) { return WIDTH; }
 EMSCRIPTEN_KEEPALIVE int fb_height(void) { return HEIGHT; }
 EMSCRIPTEN_KEEPALIVE uint8_t *framebuffer(void) { return fb; } // address in wasm memory
 
-typedef struct
-{
-    uint8_t type;
-    uint8_t dir;
-    uint16_t centre_x;
-    uint16_t centre_y;
-    uint8_t colour; // For exits
-} Tile;
-
-typedef struct
-{
-    int x;
-    int y;
-    uint8_t colour;
-    bool active;
-} Box;
-
-typedef enum {
-    COLOUR_RED,
-    COLOUR_BLUE,
-    COLOUR_GREEN,
-    COLOUR_YELLOW,
-    COLOUR_WHITE,
-    COLOUR_COUNT // final index is the number of actual colours
-} Colour;
-
-typedef enum {
-    UP,
-    RIGHT,
-    DOWN,
-    LEFT
-} Dirs;
-
-typedef enum {
-    TILE_CONVEYOR,
-    TILE_ENTRY,
-    TILE_EXIT,
-    TILE_SWITCH,
-    TILE_INACTIVE
-} Tile_Type;
-
-// ── Sprites. JS decodes each PNG and writes its RGBA into sprites[id].rgba at
-//    load, then reports its size (the write-direction mirror of framebuffer()).
-//    Ids are ordered so a tile id is SPR_TILE_UP + Dirs, a box id is
-//    SPR_BOX_RED + Colour — selection is just a base plus the enum value.
-typedef enum {
-    SPR_TILE_UP,
-    SPR_TILE_RIGHT,
-    SPR_TILE_DOWN,
-    SPR_TILE_LEFT, // align with Dirs
-    SPR_BOX_RED,
-    SPR_BOX_BLUE,
-    SPR_BOX_GREEN,
-    SPR_BOX_YELLOW,
-    SPR_BOX_WHITE, // align with Colour
-    SPR_SWITCH_UP,
-    SPR_SWITCH_RIGHT,
-    SPR_SWITCH_DOWN,
-    SPR_SWITCH_LEFT, // align with Dirs
-    SPR_COUNT
-} SpriteId;
-
-#define SPRITE_MAX (64 * 64 * 4) // generous per-sprite buffer
-
-typedef struct {
-    uint8_t rgba[SPRITE_MAX];
-    int w, h;
-} Sprite;
-
+// Sprites: JS decodes each PNG and writes its RGBA into sprites[id].rgba at
+// load, then reports its size (the write-direction mirror of framebuffer()).
 static Sprite sprites[SPR_COUNT];
 
 EMSCRIPTEN_KEEPALIVE uint8_t *sprite_ptr(int id) { return sprites[id].rgba; }
@@ -138,8 +40,9 @@ void draw_tile(Tile tile, int col, int row);
 void draw_boxes();
 int get_grid(Box box);
 
-static void load_level_1(void);
+static void load_level(int n);
 static void blit_sprite(int id, int dx, int dy);
+static void box_reached_exit(int i, Tile *exit);
 
 static Tile tiles[GAME_W * GAME_H];
 static Box box[MAX_BOXES];
@@ -147,23 +50,8 @@ static Box box[MAX_BOXES];
 static int tile_centre(int t) { return t * SUBTILE + SUBTILE / 2; } // grid  -> world centre
 static int world_to_tile(int w) { return w / SUBTILE; }             // world -> grid
 
-typedef struct {
-    int x, y;
-} Pt;
-
 static Pt project(int wx, int wy) {
     return (Pt){(wx + wy) * HX / SUBTILE + OX, (wy - wx) * HY / SUBTILE + OY};
-}
-
-// screen pixel -> tile index, or -1 if the click lands outside the board.
-static int click_to_tile(int sx, int sy) {
-    int u = (sx - OX) * SUBTILE / HX; // wx + wy
-    int v = (sy - OY) * SUBTILE / HY; // wy - wx
-    int wx = (u - v) / 2;
-    int wy = (u + v) / 2;
-    if (wx < 0 || wx >= WORLD_W || wy < 0 || wy >= WORLD_H)
-        return -1;
-    return world_to_tile(wx) + world_to_tile(wy) * GAME_W;
 }
 
 // step v toward target by up to SPEED, never overshooting — keeps == exact
@@ -176,48 +64,87 @@ static int approach(int v, int target) {
     return target;
 }
 
-void load_level() {
-    int r = rand();
-    for (int i = 0; i < MAX_BOXES; i++) {
-        box[i].x = rand() % (WIDTH);
-        box[i].y = rand() % (HEIGHT);
-        box[i].active = 1;
-        box[i].colour = rand() % (COLOUR_COUNT);
-    }
-}
-
 EMSCRIPTEN_KEEPALIVE void init(uint32_t seed) {
     srand(seed);
-    load_level_1();
-    // load_level();
+    load_level(1);
     for (int i = 0; i < NUM_TILES; i++) {
         tiles[i].centre_x = tile_centre(i % GAME_W);
         tiles[i].centre_y = tile_centre(i / GAME_W);
     }
 }
 
+static void box_reached_exit(int i, Tile *exit) {
+    box[i].active = false;
+
+    if (exit->capacity == 0 || box[i].colour != exit->colour) {
+        // Failure
+        return;
+    }
+    // Success
+    exit->capacity -= 1;
+    exit->colour = rand() % COLOUR_COUNT;
+}
+
+// Pick a colour for the next box from current exits
+static int pick_box_colour(void) {
+    int want[COLOUR_COUNT] = {0};
+    // Count demand
+    for (int t = 0; t < NUM_TILES; t++) {
+        if (tiles[t].type == TILE_EXIT && tiles[t].capacity > 0) {
+            want[tiles[t].colour] += 1;
+        }
+    }
+    // Remove supply
+    for (int i = 0; i < MAX_BOXES; i++) {
+        if (box[i].active) {
+            want[box[i].colour] -= 1;
+        }
+    }
+
+    int total = 0; // size of the bag
+    for (int c = 0; c < COLOUR_COUNT; c++) {
+        total += want[c];
+    }
+    if (total == 0) {
+        return -1;
+    }
+
+    // Roulette wheel algorithm
+    int r = rand() % total;
+    for (int c = 0; c < COLOUR_COUNT; c++) {
+        if ((r -= want[c]) < 0) {
+            return c;
+        }
+    }
+    return -1; // unreachable return
+}
+
 static void update(void) {
     S.tick++;
     if (S.delay < 1) {
-        for (int i = 0; i < MAX_BOXES; i++) {
+        int colour = pick_box_colour();
+        for (int i = 0; colour >= 0 && i < MAX_BOXES; i++) {
             if (box[i].active) {
                 continue;
             }
             box[i].x = tile_centre(ORIGIN_COL);
             box[i].y = tile_centre(ORIGIN_ROW);
             box[i].active = 1;
-            box[i].colour = rand() % (COLOUR_COUNT);
+            box[i].colour = colour;
+            S.delay = DELAY;
             break;
         }
-        S.delay = DELAY;
     }
-    S.delay -= 1;
+    if (S.delay > 0) {
+        S.delay -= 1;
+    }
 
     for (int i = 0; i < MAX_BOXES; i++) {
-        Tile this_tile = tiles[get_grid(box[i])];
+        int grid = get_grid(box[i]);
+        Tile this_tile = tiles[grid];
 
-        if (this_tile.type == TILE_EXIT) {
-            box[i].active = false;
+        if (this_tile.type == TILE_EXIT && box[i].active) {
+            box_reached_exit(i, &tiles[grid]);
             continue;
         }
 
@@ -257,49 +184,23 @@ EMSCRIPTEN_KEEPALIVE void tick(void) {
 }
 
 EMSCRIPTEN_KEEPALIVE void click(int x, int y) {
-    int idx = click_to_tile(x, y);
-    if (idx < 0)
-        return;
-    Tile *t = &tiles[idx];
-    if (t->type != TILE_SWITCH)
-        return;
-    t->dir = (t->dir + 1) % 4;
-}
-
-/* ****************************** LEVELS  ****************************** */
-static void set_tile(int x, int y, uint8_t type, uint8_t dir) {
-    int i = x + y * GAME_W;
-    tiles[i].type = type;
-    tiles[i].dir = dir;
-}
-
-static void load_level_1(void) {
-    // Standard reset: everything inactive.
+    // A switch takes a square click zone centred on its tile, wider than the
+    // drawn diamond so it's easy to hit. There's always a belt or gap between
+    // two switches, so the zones never overlap — first hit wins.
     for (int i = 0; i < NUM_TILES; i++) {
-        tiles[i].type = TILE_INACTIVE;
+        if (tiles[i].type != TILE_SWITCH)
+            continue;
+        Pt p = project(tile_centre(i % GAME_W), tile_centre(i / GAME_W));
+        if (abs(x - p.x) <= SWITCH_HIT && abs(y - p.y) <= SWITCH_HIT) {
+            tiles[i].dir = (tiles[i].dir + 1) % 4;
+            return;
+        }
     }
-
-    for (int col = 2; col <= 16; col++) {
-        set_tile(10, col, TILE_CONVEYOR, DOWN);
-    }
-    set_tile(10, 17, TILE_EXIT, 0);
-
-    set_tile(2, 10, TILE_EXIT, 0);
-    for (int row = 3; row <= 9; row++) {
-        set_tile(row, 10, TILE_CONVEYOR, LEFT);
-    }
-    set_tile(10, 10, TILE_SWITCH, DOWN); // intersection
-
-    for (int row = 11; row <= 16; row++) {
-        set_tile(row, 10, TILE_CONVEYOR, RIGHT);
-    }
-    set_tile(17, 10, TILE_EXIT, 0);
 }
-/* ****************************** DRAWING ****************************** */
 
-typedef struct {
-    uint8_t r, g, b;
-} RGB;
+#include "levels.inc"
+
+/* ****************************** DRAWING ****************************** */
 
 static const RGB COLOURS[COLOUR_COUNT] = {
     [COLOUR_RED] = {200, 50, 50},
@@ -325,8 +226,8 @@ void draw_tile(Tile tile, int col, int row) {
     Pt p = project(tile_centre(col), tile_centre(row));
 
     if (tile.type == TILE_EXIT) {
-        // no exit art yet
-        RGB c = COLOURS[tile.colour];
+        // no exit art yet: live exit shows colour, exhausted goes black
+        RGB c = tile.capacity > 0 ? COLOURS[tile.colour] : (RGB){0, 0, 0};
         fill_diamond(p.x, p.y, c.r, c.g, c.b);
         return;
     }
