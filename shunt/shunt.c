@@ -16,6 +16,8 @@ static struct
 {
     uint32_t tick;
     uint16_t delay; // gate to stop the next box appearing
+    int level;
+    bool cleared; // true once all levels are done
 } S;
 
 EMSCRIPTEN_KEEPALIVE int fb_width(void) { return WIDTH; }
@@ -41,6 +43,7 @@ void draw_boxes();
 int get_grid(Box box);
 
 static void load_level(int n);
+static void start_level(int n);
 static void blit_sprite(int id, int dx, int dy);
 static void box_reached_exit(int i, Tile *exit);
 
@@ -64,13 +67,40 @@ static int approach(int v, int target) {
     return target;
 }
 
+static bool level_complete(void) {
+    bool has_exit = false;
+    for (int i = 0; i < NUM_TILES; i++) {
+        if (tiles[i].type == TILE_EXIT) {
+            has_exit = true;
+            if (tiles[i].capacity > 0)
+                return false;
+        }
+    }
+    if (!has_exit)
+        return false;
+    for (int i = 0; i < MAX_BOXES; i++) {
+        if (box[i].active)
+            return false;
+    }
+    return true;
+}
+
+static void start_level(int n) {
+    for (int i = 0; i < MAX_BOXES; i++)
+        box[i].active = false;
+    S.delay = 0;
+    load_level(n);
+}
+
 EMSCRIPTEN_KEEPALIVE void init(uint32_t seed) {
     srand(seed);
-    load_level(1);
+    S.level = 1;
+    S.cleared = false;
     for (int i = 0; i < NUM_TILES; i++) {
         tiles[i].centre_x = tile_centre(i % GAME_W);
         tiles[i].centre_y = tile_centre(i / GAME_W);
     }
+    start_level(1);
 }
 
 static void box_reached_exit(int i, Tile *exit) {
@@ -170,6 +200,21 @@ static void update(void) {
         if (dir == LEFT)
             box[i].x = (box[i].x - SPEED + WORLD_W) % WORLD_W;
     }
+
+    if (!S.cleared && level_complete()) {
+        S.level++;
+        start_level(S.level);
+        // If the new level has no exits, load_level was a no-op (past the end)
+        bool has_exits = false;
+        for (int i = 0; i < NUM_TILES; i++) {
+            if (tiles[i].type == TILE_EXIT && tiles[i].capacity > 0) {
+                has_exits = true;
+                break;
+            }
+        }
+        if (!has_exits)
+            S.cleared = true;
+    }
 }
 
 // Paint into the framebuffer
@@ -183,6 +228,17 @@ EMSCRIPTEN_KEEPALIVE void tick(void) {
     render();
 }
 
+EMSCRIPTEN_KEEPALIVE void clear_tiles(void) {
+    int origin = ORIGIN_COL + ORIGIN_ROW * GAME_W;
+    for (int i = 0; i < NUM_TILES; i++) {
+        if (i == origin)
+            continue;
+        if (tiles[i].type == TILE_CONVEYOR && tiles[i].capacity)
+            continue; // tinted exit markers
+        tiles[i].type = TILE_INACTIVE;
+    }
+}
+
 EMSCRIPTEN_KEEPALIVE void click(int x, int y) {
     // A switch takes a square click zone centred on its tile, wider than the
     // drawn diamond so it's easy to hit. There's always a belt or gap between
@@ -192,7 +248,14 @@ EMSCRIPTEN_KEEPALIVE void click(int x, int y) {
             continue;
         Pt p = project(tile_centre(i % GAME_W), tile_centre(i / GAME_W));
         if (abs(x - p.x) <= SWITCH_HIT && abs(y - p.y) <= SWITCH_HIT) {
-            tiles[i].dir = (tiles[i].dir + 1) % 4;
+            uint8_t mask = tiles[i].dirs_mask;
+            for (int n = 1; n <= 4; n++) {
+                uint8_t next = (tiles[i].dir + n) % 4;
+                if (mask & (1 << next)) {
+                    tiles[i].dir = next;
+                    break;
+                }
+            }
             return;
         }
     }
@@ -219,6 +282,22 @@ static void fill_diamond(int cx, int cy, uint8_t r, uint8_t g, uint8_t b) {
     }
 }
 
+// 50% blue tint blend over the diamond footprint at (cx, cy)
+static void blend_blue_diamond(int cx, int cy) {
+    for (int dy = -HY; dy <= HY; dy++) {
+        int half = HX - HX * abs(dy) / HY;
+        for (int dx = -half; dx <= half; dx++) {
+            int x = cx + dx, y = cy + dy;
+            if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT)
+                continue;
+            int i = PIXEL(x, y);
+            fb[i] = fb[i] >> 1;
+            fb[i + 1] = fb[i + 1] >> 1;
+            fb[i + 2] = (uint8_t)((fb[i + 2] >> 1) + 128);
+        }
+    }
+}
+
 void draw_tile(Tile tile, int col, int row) {
     if (tile.type != TILE_CONVEYOR && tile.type != TILE_SWITCH && tile.type != TILE_EXIT) {
         return; // Remove guard when all the tiles are finished
@@ -236,6 +315,9 @@ void draw_tile(Tile tile, int col, int row) {
     int base = (tile.type == TILE_SWITCH) ? SPR_SWITCH_UP : SPR_TILE_UP;
     int id = base + tile.dir;
     blit_sprite(id, p.x - sprites[id].w / 2, p.y - sprites[id].h / 2);
+    // capacity flag on a conveyor means: overlay a 50% blue tint (marks potential exits) (DEBUG)
+    if (tile.type == TILE_CONVEYOR && tile.capacity)
+        blend_blue_diamond(p.x, p.y);
 }
 
 void draw_background() {

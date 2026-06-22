@@ -31,7 +31,7 @@
 #define SPEED 5 // world units per tick (100u = 50px, so 2u ≈ the old 1px/tick)
 
 #define ORIGIN_COL 10
-#define ORIGIN_ROW 2
+#define ORIGIN_ROW 1
 
 #define FPS 60
 #define MAX_BOXES 10
@@ -46,8 +46,9 @@ typedef struct
     uint8_t dir;
     uint16_t centre_x;
     uint16_t centre_y;
-    uint8_t colour;   // exits: which colour box this exit accepts
-    uint8_t capacity; // exits: how many boxes this exit needs
+    uint8_t colour;    // exits: which colour box this exit accepts
+    uint8_t capacity;  // exits: how many boxes this exit needs
+    uint8_t dirs_mask; // switches: bitmask of allowed dirs, bit = (1 << Dir)
 } Tile;
 
 typedef struct
