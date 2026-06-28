@@ -3,7 +3,7 @@
 
 <head>
   <title>Shunt</title>
-<link rel="stylesheet" th:href="@{/css/main.css}">
+  <link rel="stylesheet" th:href="@{/css/main.css}">
   <style>
     #screen {
       image-rendering: pixelated;
@@ -35,20 +35,28 @@
 
     <p>It's a tribute to <em>Global Player</em>, a mid-2000s Flash game for logistics company Dachser, where you sorted
       colour-coded parcels onto the right trucks, trains, and planes. Finished, Shunt will be ten levels of rising
-      difficulty. Today it's a work in progress.</p>
+      difficulty.</p>
 
     <h3>Why C</h3>
-    <p>Not for speed, for the problem. I could build this in an afternoon with a good game engine, which is the reason
-      not to. C gives you nothing for free, so rendering is never <code>for box in boxes: box.draw()</code>. It's plain
-      functions reaching into plain structs and reading their state, without tangling everything up. I've learned a lot
-      by building tributes to classic games in Java Swing, JPanels, and Processing, but this is something different. The
-      game doesn't even have an image grid, just a flat array of hand-addressed pixels.</p>
+    <p>Not for performance, for the constraint. A game engine would handle most of this easily. Without one, all the
+      challenges come straight to me. Even the rendering is work - instead of a grid of pixels, I have a straight list
+      of bytes, and calculate every pixel position. I also need a separate model and screen view to represent the game,
+      since the game is on a simple grid but the view is dimetric. If you start look at screen position instead of a
+      model position, things get messy very quickly.
+    </p>
+
+    <p>I use good tools most of the time, which make it easier than ever to skip the hard parts. This game is an
+      exercise in deliberate practice. I'm doing it for the same reason people go to the gym, now that machinery does
+      most of our heavy lifting.
+    </p>
 
     <h3>What's been hard</h3>
-    <p>I've been caught out by little things continually: 8 bit integers overflowing, 32 bits per pixel, modulo of
-      negative numbers. I've had to refactor things as my model and view became coupled together. These are the little
-      things that a language without guardrails throws at you constantly, and there's nowhere to hide. Doing it the hard
-      way, in the open, is the point.</p>
+    <p>I've been caught out by little things continually: 8-bit integers overflowing, forgetting that the buffer uses 32
+      bits per pixel, unexpected behaviour from negative modulo. I've had to refactor things as my model and view became
+      coupled together. I've also made some pragmatic choices, like putting sufficient capacity arrays on the stack
+      instead of allocating memory. These are the little things that a language without guardrails throws at you
+      constantly, and there's nowhere to hide.</p>
+
   </main>
 
 </body>
