@@ -6,7 +6,6 @@ import org.springframework.core.io.ClassPathResource;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
 public class JsonRecipeRepository {
 
@@ -20,15 +19,5 @@ public class JsonRecipeRepository {
 
     public List<Recipe> findAll() {
         return Collections.unmodifiableList(recipes);
-    }
-
-
-    public Optional<Recipe> findById(int id) {
-        return recipes.stream().filter(r -> r.getId() == id).findFirst();
-    }
-
-
-    public Optional<Recipe> findBySlug(String slug) {
-        return recipes.stream().filter(r -> r.getSlug().equals(slug)).findFirst();
     }
 }

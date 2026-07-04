@@ -31,8 +31,37 @@ body {
   z-index: 100;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   padding: 0 1.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.auth-status {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--bg);
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+
+.auth-status a,
+.auth-status .link-button {
+  color: var(--bg);
+  text-decoration: none;
+}
+
+.auth-status a:hover,
+.auth-status .link-button:hover {
+  color: var(--accent);
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 /* ── Left sidebar nav (below header) ── */

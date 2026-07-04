@@ -97,46 +97,6 @@
       background: #2e4d3f;
     }
 
-    .ai-preview-bar {
-      margin: auto -2rem -1.5rem;
-      padding: 0.75rem 2rem;
-      background: white;
-      border-top: 2px solid var(--accent);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      font-size: 0.85rem;
-      color: var(--chrome);
-      flex-shrink: 0;
-    }
-
-    .ai-preview-bar span {
-      opacity: 0.6;
-    }
-
-    .ai-preview-bar span.save-error {
-      opacity: 1;
-      color: var(--accent);
-      font-weight: bold;
-    }
-
-    .save-btn {
-      padding: 0.4rem 1.1rem;
-      background: var(--accent);
-      color: white;
-      border: none;
-      cursor: pointer;
-      font-size: 0.85rem;
-      font-family: inherit;
-      font-weight: bold;
-      white-space: nowrap;
-    }
-
-    .save-btn:hover {
-      opacity: 0.85;
-    }
-
     .scroll-hint {
       position: absolute;
       bottom: 0;
@@ -172,22 +132,13 @@
       <a class="back-to-recipes" th:href="@{/dinner}">← All Recipes</a>
       <h1 th:text="${recipe.title}">Recipe Title</h1>
 
-      <span th:if="${recipe.source != null}" class="source-badge"
-            th:classappend="${recipe.source.name() == 'SUBMITTED'} ? ' contributed' : ' house'"
-            th:text="${recipe.source.name() == 'SUBMITTED'} ? 'Contributed' : 'House'">
+      <span class="source-badge" th:classappend="${recipe.global} ? ' original' : ' custom'"
+            th:text="${recipe.global} ? 'Original' : 'Custom'">
       </span>
 
       <ul class="ingredients-list">
         <li th:each="ingredient : ${recipe.ingredients}" th:text="${ingredient.display}"></li>
       </ul>
-
-      <div th:if="${isPreview}" class="ai-preview-bar">
-        <span id="save-status">AI-generated — not saved yet</span>
-        <form th:action="@{/dinner/submit}" method="post" id="save-form" style="display:contents;">
-          <input type="hidden" name="token" th:value="${token}">
-          <button type="submit" class="save-btn">Save this recipe →</button>
-        </form>
-      </div>
 
       <div class="scroll-hint"></div>
     </section>
@@ -203,34 +154,6 @@
   <script>
     document.querySelectorAll('.ingredients-list li, .method-list li').forEach(li => {
       li.addEventListener('click', () => li.classList.toggle('done'));
-    });
-
-    const saveForm = document.getElementById('save-form');
-    saveForm?.addEventListener('submit', async e => {
-      e.preventDefault();
-      const btn = saveForm.querySelector('[type=submit]');
-      const status = document.getElementById('save-status');
-      btn.disabled = true;
-      btn.textContent = 'Saving…';
-      status.classList.remove('save-error');
-      try {
-        const response = await fetch(saveForm.action, {
-          method: 'POST',
-          body: new URLSearchParams(new FormData(saveForm)),
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-        });
-        const data = await response.json();
-        if (response.ok) {
-          window.location.href = data.redirect;
-          return;
-        }
-        status.textContent = data.error;
-      } catch {
-        status.textContent = 'Something went wrong. Try again.';
-      }
-      status.classList.add('save-error');
-      btn.disabled = false;
-      btn.textContent = 'Save this recipe →';
     });
   </script>
 

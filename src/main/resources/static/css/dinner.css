@@ -7,12 +7,12 @@
   margin-bottom: 1rem;
 }
 
-.source-badge.house {
+.source-badge.original {
   background: var(--chrome);
   color: var(--bg);
 }
 
-.source-badge.contributed {
+.source-badge.custom {
   background: var(--accent);
   color: white;
 }

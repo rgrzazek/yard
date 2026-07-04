@@ -26,4 +26,9 @@ public class WebController {
     return "shunt";
   }
 
+  @GetMapping("/login")
+  public String login() {
+    return "login";
+  }
+
 }

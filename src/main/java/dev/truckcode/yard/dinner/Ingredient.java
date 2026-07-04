@@ -3,12 +3,16 @@ package dev.truckcode.yard.dinner;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.Embeddable;
+import jakarta.validation.constraints.Size;
 
 @Embeddable
 public class Ingredient {
 
+    @Size(max = 100)
     private String name;
+    @Size(max = 100)
     private String quantity;
+    @Size(max = 100)
     private String display;
     private String type;
 

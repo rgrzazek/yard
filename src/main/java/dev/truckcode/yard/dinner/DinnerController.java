@@ -1,50 +1,30 @@
 package dev.truckcode.yard.dinner;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
-import jakarta.servlet.http.HttpSession;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
-import org.springframework.http.ResponseEntity;
+import dev.truckcode.yard.auth.CurrentUserService;
+import jakarta.validation.Valid;
 import org.springframework.stereotype.Controller;
+import org.springframework.security.core.Authentication;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
 
 @Controller
 public class DinnerController {
 
-    private static final Logger log = LoggerFactory.getLogger(DinnerController.class);
     private final RecipeService recipeService;
-    private final GeminiService geminiService;
-    private final ObjectMapper objectMapper;
+    private final CurrentUserService currentUserService;
 
-    @Value("classpath:data/ingredients.json")
-    private Resource ingredientsResource;
-
-    private List<String> ingredientOptions;
-
-    public DinnerController(RecipeService recipeService, GeminiService geminiService, ObjectMapper objectMapper) {
+    public DinnerController(RecipeService recipeService, CurrentUserService currentUserService) {
         this.recipeService = recipeService;
-        this.geminiService = geminiService;
-        this.objectMapper = objectMapper;
+        this.currentUserService = currentUserService;
     }
 
-    @PostConstruct
-    void loadIngredients() throws Exception {
-        var type = objectMapper.getTypeFactory().constructCollectionType(List.class, String.class);
-        ingredientOptions = objectMapper.readValue(ingredientsResource.getInputStream(), type);
-    }
-
-    @GetMapping("/dinner/{slug}")
-    public String recipe(@PathVariable String slug, Model model) {
-        var recipe = recipeService.getRecipeBySlug(slug);
+    // Same redirect whether the token is wrong or just belongs to someone
+    // else's household — never reveal which, so the URL can't be used to probe existence.
+    @GetMapping("/dinner/{token}")
+    public String recipe(@PathVariable String token, Authentication authentication, Model model) {
+        var myGroupId = currentUserService.currentGroupId(authentication).orElse(null);
+        var recipe = recipeService.getRecipe(token, myGroupId);
         if (recipe.isEmpty()) {
             return "redirect:/dinner";
         }
@@ -53,65 +33,42 @@ public class DinnerController {
     }
 
     @GetMapping("/dinner")
-    public String dinnerList(Model model) {
-        model.addAttribute("recipes", recipeService.getAllRecipes());
-        model.addAttribute("ingredientNames", recipeService.getAllIngredientNames());
+    public String dinnerList(Authentication authentication, Model model) {
+        var myGroupId = currentUserService.currentGroupId(authentication).orElse(null);
+        var recipes = recipeService.getVisibleRecipes(myGroupId);
+        model.addAttribute("recipes", recipes);
+        model.addAttribute("ingredientNames", recipeService.getAllIngredientNames(myGroupId));
         model.addAttribute("tonightsRecipe", recipeService.getTodaysRecipe());
-        model.addAttribute("ingredientOptions", ingredientOptions);
+        model.addAttribute("hasCustomRecipes", recipes.stream().anyMatch(r -> !r.isGlobal()));
         return "dinner";
     }
 
-    @PostMapping("/dinner/ai-recipe")
-    @ResponseBody
-    public ResponseEntity<Map<String, String>> aiRecipe(@RequestParam List<String> ingredients, HttpSession session) {
-        var allowed = new HashSet<>(ingredientOptions);
-        var safe = ingredients.stream().filter(allowed::contains).toList();
-        if (safe.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "No valid ingredients selected"));
+    @GetMapping("/dinner/new")
+    public String newRecipeForm(Model model) {
+        if (!model.containsAttribute("recipeForm")) {
+            model.addAttribute("recipeForm", new RecipeForm());
         }
-        return switch (geminiService.generateRecipe(safe)) {
-            case GeminiResult.Success s -> {
-                session.setAttribute("pendingRecipe", s.recipe());
-                session.setAttribute("pendingToken", UUID.randomUUID().toString());
-                yield ResponseEntity.ok(Map.of("redirect", "/dinner/ai-preview"));
-            }
-            case GeminiResult.OverCapacity ignored ->
-                ResponseEntity.status(503).body(Map.of("error",
-                        "Gemini's out of free thoughts for now because someone skimped on the API budget. Try again tomorrow."));
-            case GeminiResult.Failure f -> {
-                log.error("Gemini recipe generation failed", f.cause());
-                yield ResponseEntity.status(500).body(Map.of("error", "Gemini couldn't generate a recipe. Try again."));
-            }
-        };
+        return "recipe-form";
     }
 
-    @GetMapping("/dinner/ai-preview")
-    public String aiPreview(HttpSession session, Model model) {
-        var recipe = session.getAttribute("pendingRecipe");
-        var token = session.getAttribute("pendingToken");
-        if (recipe == null || token == null)
-            return "redirect:/dinner";
-        model.addAttribute("recipe", recipe);
-        model.addAttribute("isPreview", true);
-        model.addAttribute("token", token);
-        return "recipe";
-    }
+    @PostMapping("/dinner/save")
+    public String save(@Valid @ModelAttribute("recipeForm") RecipeForm form, BindingResult bindingResult,
+                        Authentication authentication, Model model) {
+        if (bindingResult.hasErrors()) {
+            return "recipe-form";
+        }
 
-    @PostMapping("/dinner/submit")
-    @ResponseBody
-    public ResponseEntity<Map<String, String>> submitRecipe(@RequestParam String token, HttpSession session) {
-        var recipe = (Recipe) session.getAttribute("pendingRecipe");
-        var expected = (String) session.getAttribute("pendingToken");
-        if (recipe == null || expected == null || !expected.equals(token)) {
-            return ResponseEntity.status(410).body(Map.of("error", "This recipe has expired. Generate a new one."));
+        var groupId = currentUserService.currentGroupId(authentication).orElse(null);
+        if (groupId == null) {
+            return "redirect:/login";
         }
-        if (recipeService.getRecipeBySlug(recipe.getSlug()).isPresent()) {
-            return ResponseEntity.status(409).body(Map.of("error", "You already have a recipe with that name."));
+
+        try {
+            var saved = recipeService.saveForGroup(form, groupId);
+            return "redirect:/dinner/" + saved.getToken();
+        } catch (RecipeLimitExceededException e) {
+            model.addAttribute("limitError", e.getMessage());
+            return "recipe-form";
         }
-        recipe.setSource(RecipeSource.SUBMITTED);
-        recipeService.save(recipe);
-        session.removeAttribute("pendingRecipe");
-        session.removeAttribute("pendingToken");
-        return ResponseEntity.ok(Map.of("redirect", "/dinner/" + recipe.getSlug()));
     }
 }
