@@ -22,26 +22,28 @@ public class DinnerController {
         this.currentUserService = currentUserService;
     }
 
-    // Same redirect whether the token is wrong or just belongs to someone
-    // else's household — never reveal which, so the URL can't be used to probe existence.
+    // Same redirect whether the token is wrong or just not visible to this
+    // user — never reveal which, so the URL can't be used to probe existence.
     @GetMapping("/dinner/{token}")
     public String recipe(@PathVariable String token, Authentication authentication, Model model) {
+        var myUserId = currentUserService.currentUserId(authentication).orElse(null);
         var myGroupId = currentUserService.currentGroupId(authentication).orElse(null);
-        var recipe = recipeService.getRecipe(token, myGroupId);
+        var recipe = recipeService.getRecipe(token, myUserId, myGroupId);
         if (recipe.isEmpty()) {
             return "redirect:/dinner";
         }
         model.addAttribute("recipe", recipe.get());
-        model.addAttribute("canModify", recipeService.canModify(recipe.get(), myGroupId));
+        model.addAttribute("canModify", recipeService.canModify(recipe.get(), myUserId));
         return "recipe";
     }
 
     @GetMapping("/dinner")
     public String dinnerList(Authentication authentication, Model model) {
+        var myUserId = currentUserService.currentUserId(authentication).orElse(null);
         var myGroupId = currentUserService.currentGroupId(authentication).orElse(null);
-        var recipes = recipeService.getVisibleRecipes(myGroupId);
+        var recipes = recipeService.getVisibleRecipes(myUserId, myGroupId);
         model.addAttribute("recipes", recipes);
-        model.addAttribute("ingredientNames", recipeService.getAllIngredientNames(myGroupId));
+        model.addAttribute("ingredientNames", recipeService.getAllIngredientNames(myUserId, myGroupId));
         model.addAttribute("tonightsRecipe", recipeService.getTodaysRecipe());
         model.addAttribute("hasCustomRecipes", recipes.stream().anyMatch(r -> !r.isGlobal()));
         return "dinner";
@@ -62,13 +64,10 @@ public class DinnerController {
             return "recipe-form";
         }
 
-        var groupId = currentUserService.currentGroupId(authentication).orElse(null);
-        if (groupId == null) {
-            return "redirect:/login";
-        }
+        var ownerId = currentUserService.currentUserId(authentication).orElseThrow();
 
         try {
-            var saved = recipeService.saveForGroup(form, groupId);
+            var saved = recipeService.saveForOwner(form, ownerId);
             return "redirect:/dinner/" + saved.getToken();
         } catch (RecipeLimitExceededException e) {
             model.addAttribute("limitError", e.getMessage());
@@ -78,8 +77,8 @@ public class DinnerController {
 
     @GetMapping("/dinner/{token}/edit")
     public String editRecipeForm(@PathVariable String token, Authentication authentication, Model model) {
-        var myGroupId = currentUserService.currentGroupId(authentication).orElse(null);
-        var recipe = recipeService.getEditableRecipe(token, myGroupId);
+        var myUserId = currentUserService.currentUserId(authentication).orElse(null);
+        var recipe = recipeService.getEditableRecipe(token, myUserId);
         if (recipe.isEmpty()) {
             return "redirect:/dinner";
         }
@@ -99,8 +98,8 @@ public class DinnerController {
             return "recipe-form";
         }
 
-        var myGroupId = currentUserService.currentGroupId(authentication).orElse(null);
-        if (!recipeService.updateForGroup(token, form, myGroupId)) {
+        var myUserId = currentUserService.currentUserId(authentication).orElse(null);
+        if (!recipeService.updateForOwner(token, form, myUserId)) {
             return "redirect:/dinner";
         }
         return "redirect:/dinner/" + token;
@@ -108,8 +107,8 @@ public class DinnerController {
 
     @PostMapping("/dinner/{token}/delete")
     public String delete(@PathVariable String token, Authentication authentication) {
-        var myGroupId = currentUserService.currentGroupId(authentication).orElse(null);
-        recipeService.deleteForGroup(token, myGroupId);
+        var myUserId = currentUserService.currentUserId(authentication).orElse(null);
+        recipeService.deleteForOwner(token, myUserId);
         return "redirect:/dinner";
     }
 

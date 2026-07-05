@@ -25,4 +25,8 @@ public class CurrentUserService {
     public Optional<Long> currentGroupId(Authentication authentication) {
         return currentUser(authentication).map(User::getGroupId);
     }
+
+    public Optional<Long> currentUserId(Authentication authentication) {
+        return currentUser(authentication).map(User::getId);
+    }
 }

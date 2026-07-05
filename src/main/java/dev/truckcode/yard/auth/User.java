@@ -18,8 +18,9 @@ public class User {
     @Column(name = "password_hash")
     private String passwordHash;
 
+    // Null until the user starts or joins a household — see GroupService.
     // Plain shared number, not a foreign key — see Recipe.groupId for why there's no backing table.
-    @Column(name = "group_id", nullable = false)
+    @Column(name = "group_id")
     private Long groupId;
 
     public Long getId() { return id; }

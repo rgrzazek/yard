@@ -25,18 +25,17 @@ public class Recipe {
     @Column(length = 5, nullable = false, unique = true)
     private String token;
 
-    // true = visible to everyone, groupId is irrelevant. false = private,
-    // groupId must be set. Defaults false, the safe direction: a bug that
+    // true = visible to everyone, ownerId is irrelevant. false = private,
+    // ownerId must be set. Defaults false, the safe direction: a bug that
     // forgets to set this leaves a recipe under-shared, not leaked to everyone.
     @Column(name = "is_global", nullable = false)
     private boolean isGlobal;
 
-    // Plain shared number, not a foreign key — the only code path that ever
-    // sets this (RecipeService.saveForGroup) always copies it from an already
-    // -authenticated user's own groupId, so there's no untrusted value a
-    // constraint would ever need to catch.
-    @Column(name = "group_id")
-    private Long groupId;
+    // Who made it. Household visibility is computed from this via a join to
+    // app_user.group_id (see RecipeRepository), not stamped on the recipe —
+    // so it stays correct if the owner later changes households.
+    @Column(name = "owner_id")
+    private Long ownerId;
 
     @Valid
     @Size(max = 50)
@@ -64,8 +63,8 @@ public class Recipe {
     public boolean isGlobal() { return isGlobal; }
     public void setGlobal(boolean global) { isGlobal = global; }
 
-    public Long getGroupId() { return groupId; }
-    public void setGroupId(Long groupId) { this.groupId = groupId; }
+    public Long getOwnerId() { return ownerId; }
+    public void setOwnerId(Long ownerId) { this.ownerId = ownerId; }
 
     public List<Ingredient> getIngredients() { return ingredients; }
     public void setIngredients(List<Ingredient> ingredients) { this.ingredients = ingredients; }

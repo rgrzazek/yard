@@ -14,7 +14,7 @@ public class RecipeService {
 
     private static final String TOKEN_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     private static final int TOKEN_LENGTH = 5;
-    private static final int MAX_RECIPES_PER_GROUP = 100;
+    private static final int MAX_RECIPES_PER_OWNER = 100;
 
     private final RecipeRepository recipeRepository;
     private final SecureRandom random = new SecureRandom();
@@ -24,23 +24,23 @@ public class RecipeService {
     }
 
     public Recipe getTodaysRecipe() {
-        List<Recipe> global = recipeRepository.findAllVisibleTo(null);
+        List<Recipe> global = recipeRepository.findAllVisibleTo(null, null);
         int index = (int) (LocalDate.now().toEpochDay() % global.size());
         return global.get(index);
     }
 
-    // myGroupId must come from the caller's own session (CurrentUserService),
-    // never a request param.
-    public Optional<Recipe> getRecipe(String token, Long myGroupId) {
-        return recipeRepository.findVisibleByToken(token, myGroupId);
+    // myUserId/myGroupId must come from the caller's own session
+    // (CurrentUserService), never a request param.
+    public Optional<Recipe> getRecipe(String token, Long myUserId, Long myGroupId) {
+        return recipeRepository.findVisibleByToken(token, myUserId, myGroupId);
     }
 
-    public List<Recipe> getVisibleRecipes(Long myGroupId) {
-        return recipeRepository.findAllVisibleTo(myGroupId);
+    public List<Recipe> getVisibleRecipes(Long myUserId, Long myGroupId) {
+        return recipeRepository.findAllVisibleTo(myUserId, myGroupId);
     }
 
-    public List<String> getAllIngredientNames(Long myGroupId) {
-        return getVisibleRecipes(myGroupId).stream()
+    public List<String> getAllIngredientNames(Long myUserId, Long myGroupId) {
+        return getVisibleRecipes(myUserId, myGroupId).stream()
                 .flatMap(r -> r.getIngredients().stream())
                 .filter(i -> i.getIngredientType() != IngredientType.STAPLE)
                 .map(Ingredient::name)
@@ -49,9 +49,9 @@ public class RecipeService {
                 .collect(Collectors.toList());
     }
 
-    public Recipe saveForGroup(RecipeForm form, Long groupId) {
-        if (recipeRepository.countByGroupId(groupId) >= MAX_RECIPES_PER_GROUP) {
-            throw new RecipeLimitExceededException("Your household has reached the " + MAX_RECIPES_PER_GROUP + " recipe limit.");
+    public Recipe saveForOwner(RecipeForm form, Long ownerId) {
+        if (recipeRepository.countByOwnerId(ownerId) >= MAX_RECIPES_PER_OWNER) {
+            throw new RecipeLimitExceededException("You've reached the " + MAX_RECIPES_PER_OWNER + " recipe limit.");
         }
 
         var recipe = new Recipe();
@@ -59,23 +59,23 @@ public class RecipeService {
         recipe.setIngredients(mapIngredients(form.getIngredients()));
         recipe.setMethod(new ArrayList<>(form.getSteps()));
         recipe.setGlobal(false);
-        recipe.setGroupId(groupId);
+        recipe.setOwnerId(ownerId);
         recipe.setToken(generateUniqueToken());
 
         return recipeRepository.save(recipe);
     }
 
-    public boolean canModify(Recipe recipe, Long myGroupId) {
-        return !recipe.isGlobal() && myGroupId != null && myGroupId.equals(recipe.getGroupId());
+    public boolean canModify(Recipe recipe, Long myUserId) {
+        return !recipe.isGlobal() && myUserId != null && myUserId.equals(recipe.getOwnerId());
     }
 
-    public Optional<Recipe> getEditableRecipe(String token, Long myGroupId) {
-        if (myGroupId == null) return Optional.empty();
-        return recipeRepository.findEditableByToken(token, myGroupId);
+    public Optional<Recipe> getEditableRecipe(String token, Long myUserId) {
+        if (myUserId == null) return Optional.empty();
+        return recipeRepository.findEditableByToken(token, myUserId);
     }
 
-    public boolean updateForGroup(String token, RecipeForm form, Long myGroupId) {
-        var recipeOpt = getEditableRecipe(token, myGroupId);
+    public boolean updateForOwner(String token, RecipeForm form, Long myUserId) {
+        var recipeOpt = getEditableRecipe(token, myUserId);
         if (recipeOpt.isEmpty()) return false;
 
         var recipe = recipeOpt.get();
@@ -86,8 +86,8 @@ public class RecipeService {
         return true;
     }
 
-    public boolean deleteForGroup(String token, Long myGroupId) {
-        var recipeOpt = getEditableRecipe(token, myGroupId);
+    public boolean deleteForOwner(String token, Long myUserId) {
+        var recipeOpt = getEditableRecipe(token, myUserId);
         if (recipeOpt.isEmpty()) return false;
         recipeRepository.delete(recipeOpt.get());
         return true;

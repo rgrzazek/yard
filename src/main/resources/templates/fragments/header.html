@@ -1,6 +1,7 @@
 <div class="site-header" th:fragment="header" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
   <div class="auth-status" sec:authorize="isAuthenticated()">
     <span sec:authentication="name"></span>
+    <a th:href="@{/group}">Household</a>
     <form th:action="@{/logout}" method="post">
       <input type="hidden" th:if="${_csrf != null}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
       <button type="submit" class="link-button">Log out</button>
@@ -8,5 +9,6 @@
   </div>
   <div class="auth-status" sec:authorize="isAnonymous()">
     <a th:href="@{/login}">Log in</a>
+    <a th:href="@{/signup}">Sign up</a>
   </div>
 </div>

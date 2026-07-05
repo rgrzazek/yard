@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+  <title>Join household</title>
+  <link rel="stylesheet" th:href="@{/css/main.css}">
+  <style>
+    .join-result {
+      max-width: 480px;
+      margin: 3rem auto;
+    }
+
+    .join-btn {
+      padding: 0.6rem 1.5rem;
+      background: var(--chrome);
+      color: var(--bg);
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: bold;
+    }
+
+    .join-btn:hover {
+      background: #2e4d3f;
+    }
+  </style>
+</head>
+
+<body>
+  <div th:insert="~{fragments/header :: header}"></div>
+  <header th:insert="~{fragments/nav :: nav}"></header>
+
+  <main>
+    <div class="join-result">
+      <div th:if="${token != null}">
+        <h1>Join this household?</h1>
+        <p>Your recipes will be shared with everyone in it, and you'll see theirs.</p>
+        <form th:action="@{/join/{token}(token=${token})}" method="post">
+          <button type="submit" class="join-btn">Join household →</button>
+        </form>
+      </div>
+      <div th:if="${result == 'joined'}">
+        <h1>You're in</h1>
+        <p>You've joined the household. Any recipes you already had are now shared with them, and you can see theirs.
+          <a th:href="@{/dinner}">See its recipes →</a></p>
+      </div>
+      <div th:if="${result == 'already-grouped'}">
+        <h1>Already in a household</h1>
+        <p>You're already part of one, so this link was ignored. <a th:href="@{/group}">Manage your household →</a></p>
+      </div>
+      <div th:if="${result == 'invalid'}">
+        <h1>Invalid link</h1>
+        <p>This invite link is invalid or has been replaced by a newer one.</p>
+      </div>
+    </div>
+  </main>
+</body>
+
+</html>

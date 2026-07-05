@@ -9,20 +9,30 @@ import java.util.Optional;
 
 public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
 
-    // myGroupId is always derived server-side from the logged-in user's
-    // session, never trusted from the request — this is the whole access check,
-    // for global and private recipes alike, one identifier scheme either way.
-    @Query("SELECT r FROM Recipe r WHERE r.token = :token AND (r.isGlobal = true OR r.groupId = :myGroupId)")
-    Optional<Recipe> findVisibleByToken(@Param("token") String token, @Param("myGroupId") Long myGroupId);
+    // myUserId/myGroupId always come from the logged-in user's own session,
+    // never the request. Visible = global, mine, or owned by anyone currently
+    // in my household — sharing follows live group membership, not a snapshot.
+    @Query("""
+            SELECT r FROM Recipe r WHERE r.token = :token AND (r.isGlobal = true
+                OR r.ownerId = :myUserId
+                OR r.ownerId IN (SELECT u.id FROM User u WHERE u.groupId = :myGroupId))
+            """)
+    Optional<Recipe> findVisibleByToken(@Param("token") String token, @Param("myUserId") Long myUserId,
+                                         @Param("myGroupId") Long myGroupId);
 
-    // isGlobal check is defence in depth — the DB constraint doesn't guarantee global rows lack a group_id.
-    @Query("SELECT r FROM Recipe r WHERE r.token = :token AND r.isGlobal = false AND r.groupId = :myGroupId")
-    Optional<Recipe> findEditableByToken(@Param("token") String token, @Param("myGroupId") Long myGroupId);
+    // Editing/deleting stays with the actual owner — sharing a recipe with
+    // your household doesn't hand over the right to change it.
+    @Query("SELECT r FROM Recipe r WHERE r.token = :token AND r.isGlobal = false AND r.ownerId = :myUserId")
+    Optional<Recipe> findEditableByToken(@Param("token") String token, @Param("myUserId") Long myUserId);
 
     boolean existsByToken(String token);
 
-    long countByGroupId(Long groupId);
+    long countByOwnerId(Long ownerId);
 
-    @Query("SELECT r FROM Recipe r WHERE r.isGlobal = true OR r.groupId = :myGroupId")
-    List<Recipe> findAllVisibleTo(@Param("myGroupId") Long myGroupId);
+    @Query("""
+            SELECT r FROM Recipe r WHERE r.isGlobal = true
+                OR r.ownerId = :myUserId
+                OR r.ownerId IN (SELECT u.id FROM User u WHERE u.groupId = :myGroupId)
+            """)
+    List<Recipe> findAllVisibleTo(@Param("myUserId") Long myUserId, @Param("myGroupId") Long myGroupId);
 }
