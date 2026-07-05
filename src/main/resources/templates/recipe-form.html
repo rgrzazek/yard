@@ -2,7 +2,7 @@
 <html xmlns:th="http://www.thymeleaf.org">
 
 <head>
-  <title>Add a recipe</title>
+  <title th:text="${token != null} ? 'Edit recipe' : 'Add a recipe'">Add a recipe</title>
   <link rel="stylesheet" th:href="@{/css/main.css}">
   <style>
     .recipe-form {
@@ -111,7 +111,9 @@
   <header th:insert="~{fragments/nav :: nav}"></header>
 
   <main>
-    <form class="recipe-form" th:action="@{/dinner/save}" th:object="${recipeForm}" method="post">
+    <form class="recipe-form"
+          th:action="${token != null} ? @{/dinner/{token}/edit(token=${token})} : @{/dinner/save}"
+          th:object="${recipeForm}" method="post">
 
       <ul class="form-errors" th:if="${limitError}">
         <li th:text="${limitError}"></li>
@@ -151,7 +153,7 @@
                 data-maxlength="500">+ Add step</button>
       </div>
 
-      <button type="submit" class="save-btn">Save recipe →</button>
+      <button type="submit" class="save-btn" th:text="${token != null} ? 'Save changes →' : 'Save recipe →'">Save recipe →</button>
     </form>
   </main>
 

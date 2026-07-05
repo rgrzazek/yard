@@ -8,6 +8,9 @@ import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+import java.util.stream.Collectors;
+
 @Controller
 public class DinnerController {
 
@@ -29,6 +32,7 @@ public class DinnerController {
             return "redirect:/dinner";
         }
         model.addAttribute("recipe", recipe.get());
+        model.addAttribute("canModify", recipeService.canModify(recipe.get(), myGroupId));
         return "recipe";
     }
 
@@ -70,5 +74,50 @@ public class DinnerController {
             model.addAttribute("limitError", e.getMessage());
             return "recipe-form";
         }
+    }
+
+    @GetMapping("/dinner/{token}/edit")
+    public String editRecipeForm(@PathVariable String token, Authentication authentication, Model model) {
+        var myGroupId = currentUserService.currentGroupId(authentication).orElse(null);
+        var recipe = recipeService.getEditableRecipe(token, myGroupId);
+        if (recipe.isEmpty()) {
+            return "redirect:/dinner";
+        }
+
+        if (!model.containsAttribute("recipeForm")) {
+            model.addAttribute("recipeForm", toForm(recipe.get()));
+        }
+        model.addAttribute("token", token);
+        return "recipe-form";
+    }
+
+    @PostMapping("/dinner/{token}/edit")
+    public String update(@PathVariable String token, @Valid @ModelAttribute("recipeForm") RecipeForm form,
+                          BindingResult bindingResult, Authentication authentication, Model model) {
+        if (bindingResult.hasErrors()) {
+            model.addAttribute("token", token);
+            return "recipe-form";
+        }
+
+        var myGroupId = currentUserService.currentGroupId(authentication).orElse(null);
+        if (!recipeService.updateForGroup(token, form, myGroupId)) {
+            return "redirect:/dinner";
+        }
+        return "redirect:/dinner/" + token;
+    }
+
+    @PostMapping("/dinner/{token}/delete")
+    public String delete(@PathVariable String token, Authentication authentication) {
+        var myGroupId = currentUserService.currentGroupId(authentication).orElse(null);
+        recipeService.deleteForGroup(token, myGroupId);
+        return "redirect:/dinner";
+    }
+
+    private RecipeForm toForm(Recipe recipe) {
+        var form = new RecipeForm();
+        form.setTitle(recipe.getTitle());
+        form.setIngredients(recipe.getIngredients().stream().map(Ingredient::name).collect(Collectors.toList()));
+        form.setSteps(new ArrayList<>(recipe.getMethod()));
+        return form;
     }
 }

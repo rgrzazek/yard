@@ -15,6 +15,10 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
     @Query("SELECT r FROM Recipe r WHERE r.token = :token AND (r.isGlobal = true OR r.groupId = :myGroupId)")
     Optional<Recipe> findVisibleByToken(@Param("token") String token, @Param("myGroupId") Long myGroupId);
 
+    // isGlobal check is defence in depth — the DB constraint doesn't guarantee global rows lack a group_id.
+    @Query("SELECT r FROM Recipe r WHERE r.token = :token AND r.isGlobal = false AND r.groupId = :myGroupId")
+    Optional<Recipe> findEditableByToken(@Param("token") String token, @Param("myGroupId") Long myGroupId);
+
     boolean existsByToken(String token);
 
     long countByGroupId(Long groupId);

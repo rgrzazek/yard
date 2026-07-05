@@ -56,15 +56,47 @@ public class RecipeService {
 
         var recipe = new Recipe();
         recipe.setTitle(form.getTitle());
-        recipe.setIngredients(form.getIngredients().stream()
-                .map(line -> new Ingredient(line, null, line, null))
-                .collect(Collectors.toList()));
+        recipe.setIngredients(mapIngredients(form.getIngredients()));
         recipe.setMethod(new ArrayList<>(form.getSteps()));
         recipe.setGlobal(false);
         recipe.setGroupId(groupId);
         recipe.setToken(generateUniqueToken());
 
         return recipeRepository.save(recipe);
+    }
+
+    public boolean canModify(Recipe recipe, Long myGroupId) {
+        return !recipe.isGlobal() && myGroupId != null && myGroupId.equals(recipe.getGroupId());
+    }
+
+    public Optional<Recipe> getEditableRecipe(String token, Long myGroupId) {
+        if (myGroupId == null) return Optional.empty();
+        return recipeRepository.findEditableByToken(token, myGroupId);
+    }
+
+    public boolean updateForGroup(String token, RecipeForm form, Long myGroupId) {
+        var recipeOpt = getEditableRecipe(token, myGroupId);
+        if (recipeOpt.isEmpty()) return false;
+
+        var recipe = recipeOpt.get();
+        recipe.setTitle(form.getTitle());
+        recipe.setIngredients(mapIngredients(form.getIngredients()));
+        recipe.setMethod(new ArrayList<>(form.getSteps()));
+        recipeRepository.save(recipe);
+        return true;
+    }
+
+    public boolean deleteForGroup(String token, Long myGroupId) {
+        var recipeOpt = getEditableRecipe(token, myGroupId);
+        if (recipeOpt.isEmpty()) return false;
+        recipeRepository.delete(recipeOpt.get());
+        return true;
+    }
+
+    private List<Ingredient> mapIngredients(List<String> lines) {
+        return lines.stream()
+                .map(line -> new Ingredient(line, null, line, null))
+                .collect(Collectors.toList());
     }
 
     // Package-visible so RecipeSeeder can mint tokens for the curated set too.

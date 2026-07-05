@@ -97,6 +97,38 @@
       background: #2e4d3f;
     }
 
+    .recipe-actions {
+      display: flex;
+      gap: 0.75rem;
+      margin: 0.75rem 0;
+    }
+
+    .edit-btn, .delete-btn {
+      padding: 0.4rem 1rem;
+      border: 2px solid var(--chrome);
+      background: none;
+      color: var(--chrome);
+      font-family: inherit;
+      font-size: 0.85rem;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .edit-btn:hover {
+      background: var(--chrome);
+      color: var(--bg);
+    }
+
+    .delete-btn {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .delete-btn:hover {
+      background: var(--accent);
+      color: white;
+    }
+
     .scroll-hint {
       position: absolute;
       bottom: 0;
@@ -136,6 +168,13 @@
             th:text="${recipe.global} ? 'Original' : 'Custom'">
       </span>
 
+      <div class="recipe-actions" th:if="${canModify}">
+        <a class="edit-btn" th:href="@{/dinner/{token}/edit(token=${recipe.token})}">Edit</a>
+        <form class="delete-form" th:action="@{/dinner/{token}/delete(token=${recipe.token})}" method="post">
+          <button type="submit" class="delete-btn">Delete</button>
+        </form>
+      </div>
+
       <ul class="ingredients-list">
         <li th:each="ingredient : ${recipe.ingredients}" th:text="${ingredient.display}"></li>
       </ul>
@@ -154,6 +193,10 @@
   <script>
     document.querySelectorAll('.ingredients-list li, .method-list li').forEach(li => {
       li.addEventListener('click', () => li.classList.toggle('done'));
+    });
+
+    document.querySelector('.delete-form')?.addEventListener('submit', e => {
+      if (!confirm("Delete this recipe? This can't be undone.")) e.preventDefault();
     });
   </script>
 
