@@ -139,11 +139,12 @@
     <div class="dinner-toolbar">
       <div class="source-filter">
         <button class="source-btn active" th:if="${hasCustomRecipes}" data-source="all">All</button>
-        <button class="source-btn" th:classappend="${!hasCustomRecipes} ? ' active'" data-source="Original">Original</button>
+        <button class="source-btn" th:classappend="${!hasCustomRecipes} ? ' active'"
+          data-source="Original">Original</button>
         <button class="source-btn" th:if="${hasCustomRecipes}" data-source="Custom">Custom</button>
       </div>
       <div class="toolbar-actions">
-        <button class="generate-btn" id="pick-random">Pick for me →</button>
+        <button class="generate-btn" id="pick-random">Pick random →</button>
         <a class="generate-btn" sec:authorize="isAuthenticated()" th:href="@{/dinner/new}">+ Add a recipe</a>
       </div>
     </div>
@@ -154,11 +155,10 @@
     </div>
 
     <section class="project-grid">
-      <a class="project-card" th:each="recipe : ${recipes}"
-         th:href="@{/dinner/{token}(token=${recipe.token})}"
-         th:attr="data-ingredients=${recipe.ingredientNames},data-source=${recipe.global ? 'Original' : 'Custom'}">
+      <a class="project-card" th:each="recipe : ${recipes}" th:href="@{/dinner/{token}(token=${recipe.token})}"
+        th:attr="data-ingredients=${recipe.ingredientNames},data-source=${recipe.global ? 'Original' : 'Custom'}">
         <span class="source-badge" th:classappend="${recipe.global} ? ' original' : ' custom'"
-              th:text="${recipe.global} ? 'Original' : 'Custom'"></span>
+          th:text="${recipe.global} ? 'Original' : 'Custom'"></span>
         <h2 th:text="${recipe.title}"></h2>
       </a>
     </section>
