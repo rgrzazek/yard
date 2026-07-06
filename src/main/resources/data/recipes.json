@@ -309,5 +309,103 @@
       "Slice the rested steak into thin strips. Stir in right before serving — it finishes cooking in 1–2 minutes and stays tender.",
       "Serve over rice."
     ]
+  },
+  {
+    "id": 10,
+    "title": "Creamy Chicken and Mushroom (with Pasta or Mash)",
+    "ingredients": [
+      {
+        "name": "chicken",
+        "quantity": "800g",
+        "display": "800g Chicken (Thighs or Tenderloins)",
+        "type": "fresh"
+      },
+      {
+        "name": "cream",
+        "quantity": null,
+        "display": "Cream (little jar)",
+        "type": "fresh"
+      },
+      {
+        "name": "garlic",
+        "quantity": null,
+        "display": "Garlic",
+        "type": "fresh"
+      },
+      {
+        "name": "parsley",
+        "quantity": null,
+        "display": "Parsley",
+        "type": "fresh"
+      },
+      {
+        "name": "mushrooms",
+        "quantity": null,
+        "display": "Brown Mushrooms",
+        "type": "fresh"
+      },
+      {
+        "name": "parmesan cheese",
+        "quantity": null,
+        "display": "Parmesan Cheese",
+        "type": "fresh"
+      },
+      {
+        "name": "garlic powder",
+        "quantity": null,
+        "display": "Garlic Powder",
+        "type": "pantry"
+      },
+      {
+        "name": "onion powder",
+        "quantity": null,
+        "display": "Onion Powder",
+        "type": "pantry"
+      },
+      {
+        "name": "dried rosemary",
+        "quantity": null,
+        "display": "Dried Rosemary",
+        "type": "pantry"
+      },
+      {
+        "name": "potatoes",
+        "quantity": "4",
+        "display": "4 Potatoes (or pasta of choice)",
+        "type": "fresh"
+      },
+      {
+        "name": "salt",
+        "quantity": null,
+        "display": "Salt",
+        "type": "staple"
+      },
+      {
+        "name": "pepper",
+        "quantity": null,
+        "display": "Pepper",
+        "type": "staple"
+      },
+      {
+        "name": "butter",
+        "quantity": null,
+        "display": "Butter",
+        "type": "staple"
+      }
+    ],
+    "method": [
+      "Add chicken to well oiled and heated pan.",
+      "Sprinkle on the garlic powder, onion powder, rosemary and salt and pepper.",
+      "Cook chicken in batches if necessary. Remove when cooked through.",
+      "Turn the pan to low and add butter to deglaze the pan.",
+      "Add garlic and cook until fragrant.",
+      "Add mushrooms and cook until tender.",
+      "Add the parsley and cook until fragrant.",
+      "Add cream to the pan and cook until it has reduced and thickened.",
+      "Add parmesan cheese and allow to melt into the cream.",
+      "During this time, ensure the potatoes are cooked and ready for mashing.",
+      "If having pasta, ensure pasta is cooked and al dente.",
+      "Add the chicken to the sauce and allow to heat through while mashing the spuds."
+    ]
   }
 ]
