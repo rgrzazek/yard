@@ -5,3 +5,7 @@ truckcode.dev {
 www.truckcode.dev {
     redir https://truckcode.dev{uri} permanent
 }
+
+logs.truckcode.dev {
+    reverse_proxy dozzle:8080
+}

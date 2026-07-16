@@ -21,6 +21,17 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
 
+  # Read-only log viewer, reachable only through Caddy behind a login —
+  # gives log access without handing out SSH keys to the box itself.
+  dozzle:
+    image: amir20/dozzle:latest
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./dozzle-users.yml:/data/users.yml:ro
+    environment:
+      DOZZLE_AUTH_PROVIDER: simple
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -34,6 +45,7 @@ services:
       - caddy-config:/config
     depends_on:
       - app
+      - dozzle
 
 volumes:
   yard-db-data:
