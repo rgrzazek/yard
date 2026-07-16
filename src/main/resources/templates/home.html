@@ -13,7 +13,7 @@
   <main>
     <h1>Robert Grzazek</h1>
 
-    <p>I'm a software engineer who doesn't like waste. Not shortcuts — waste. There's a difference.</p>
+    <p>I'm a software engineer who doesn't like waste. Not shortcuts, but waste. There's a difference.</p>
 
     <p>I spent nearly a decade in transport logistics where getting it wrong meant real consequences. You learn to think
       clearly about what actually matters. Call ahead for dinner, start the microwave before you refuel, have a shower
@@ -21,17 +21,16 @@
       Climb the ladder and look in the tank no matter how tired you are.</p>
 
     <p>I brought that into software. I'll question any process that exists out of habit, any meeting that could be an
-      email, any abstraction that earns nothing. But I won't cut corners on the parts that matter — the data has to be
+      email, any abstraction that earns nothing. But I won't cut corners on the parts that matter; the data has to be
       right, the edge case has to be handled, the thing has to actually work.</p>
 
-    <p>I work in post-trade finance now — the part that happens after a trader clicks buy, before the money actually
-      moves. If it breaks, it's a bad day for everyone. That suits me.</p>
+    <p>I work in post-trade finance now. If it breaks, it's a bad day for everyone. That suits me.</p>
 
     <section class="project-grid">
 
       <a class="project-card" th:href="@{/sim}">
         <h2>Truck Simulator</h2>
-        <p>Most truck games get the physics wrong — trailers drift sideways as if on ice rather than rolling on wheels.
+        <p>Most truck games get the physics wrong; trailers drift sideways as if on ice rather than rolling on wheels.
           This is a bird's-eye simulator that models how trucks and road trains actually behave around corners and in
           reverse.</p>
       </a>
@@ -39,7 +38,13 @@
       <a class="project-card" th:href="@{/dinner}">
         <h2>Dinner Planner</h2>
         <p>A real tool, actually used. Built with my partner to manage meal planning and shopping. Iterating on it over
-          time — the UX problems are real because the users are real.</p>
+          time, the UX problems are real because the users are real.</p>
+      </a>
+
+      <a class="project-card" th:href="@{/shunt}">
+        <h2>Shunt</h2>
+        <p>A conveyor-routing puzzle. Click switches to sort boxes onto the right belts. Built in C, compiled to
+          WebAssembly, with no game engine underneath. That constraint is the point.</p>
       </a>
 
     </section>
