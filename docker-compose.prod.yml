@@ -19,7 +19,6 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/yard
       SPRING_DATASOURCE_USERNAME: ${DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
 
   # Read-only log viewer, reachable only through Caddy behind a login —
   # gives log access without handing out SSH keys to the box itself.
