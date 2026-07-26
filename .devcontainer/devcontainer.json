@@ -3,7 +3,10 @@
   "build": {
     "dockerfile": "Dockerfile",
     "args": {
-      "TZ": "${localEnv:TZ:America/Los_Angeles}",
+      // TZ is normally unset in a macOS shell, so the fallback is what actually
+      // applies. Left at the template's US default this container logged in
+      // Pacific time while the host ran on AEST.
+      "TZ": "${localEnv:TZ:Australia/Sydney}",
       "CLAUDE_CODE_VERSION": "latest",
       "GIT_DELTA_VERSION": "0.18.2",
       "ZSH_IN_DOCKER_VERSION": "1.2.0"
@@ -17,8 +20,18 @@
     "ghcr.io/devcontainers/features/docker-in-docker:2": {}
   },
   // Docker-in-Docker needs this — it's what makes it an isolated *nested*
-  // daemon rather than a mount of the host's docker.sock. See the chat
-  // history / commit message for the tradeoff this was chosen over.
+  // daemon rather than a mount of the host's docker.sock, which would hand the
+  // container control of the host's real daemon (one `docker run -v /:/host`
+  // reaches everything).
+  //
+  // Know what this buys and what it doesn't: the container is NOT the security
+  // boundary. DinD requires `node` to be in the docker group, which is
+  // root-equivalent, and `privileged` turns container-root into root on
+  // whatever kernel is underneath. On macOS that kernel belongs to the Docker
+  // Desktop VM, and the hypervisor is the real wall — which is why this is a
+  // reasonable place to run an agent with permissions skipped. On a Linux host
+  // that same kernel is the actual machine, and this config would be
+  // materially less safe. Don't carry the mental model across.
   "privileged": true,
   "customizations": {
     "vscode": {
@@ -53,6 +66,16 @@
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "DISABLE_AUTOUPDATER": "1"
   },
+  // This is a live bind mount, not a copy — every write to /workspace lands on
+  // the host filesystem immediately. The container protects the machine around
+  // your code; git is what protects the code itself.
+  //
+  // Host prerequisite that lives outside this repo: Docker Desktop's file
+  // sharing should be scoped to this project directory only (Settings >
+  // Resources > File sharing), not the default /Users. That scoping is what
+  // keeps even a VM-level escape boring, and cloning this repo does not bring
+  // it with you. `consistency=delegated` is a Docker-Desktop-on-macOS
+  // performance hint and a no-op elsewhere.
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
   "workspaceFolder": "/workspace",
   // Pull postgres + the Testcontainers sidecar (ryuk, which it spins up

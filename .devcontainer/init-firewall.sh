@@ -44,6 +44,20 @@ iptables -F INPUT
 iptables -F OUTPUT
 ipset destroy allowed-domains 2>/dev/null || true
 
+# Re-open the policies before rebuilding. `-F` clears rules but NOT the chain
+# policy, so on a re-run inside an already-firewalled container we would be
+# left at DROP with an empty allowlist — and the allowlist is built by talking
+# to the network, so the GitHub fetch below fails, the ERR trap fires, and the
+# script bricks its own egress. That never shows up at container start (the
+# policies are ACCEPT then), only when re-running the script in place.
+#
+# This does not weaken anything: it makes a re-run behave exactly like a fresh
+# start, and the ERR trap plus the DROP policies set at the end still ensure we
+# finish closed or not at all.
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -P OUTPUT ACCEPT
+
 # First allow DNS and localhost before any restrictions
 # Allow outbound DNS
 iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
@@ -158,6 +172,28 @@ iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 # Then allow only specific outbound traffic to allowed domains
 iptables -A OUTPUT -m set --match-set allowed-domains dst -j ACCEPT
+
+# Reach containers on the *nested* daemon's bridges. The HOST_NETWORK rule
+# above derives the OUTER Docker Desktop network (172.17/24) and never matches
+# anything — under DinD the daemon we actually talk to uses 172.18/16 for its
+# default bridge and allocates 172.19+ for each compose network.
+#
+# Without this, connecting to a published port via 127.0.0.1 fails in a way
+# that looks nothing like a firewall: Docker's nat OUTPUT rule carries
+# `! -d 127.0.0.0/8`, so loopback destinations get no DNAT and are served by
+# the userland docker-proxy instead. The proxy accepts your connection, then
+# makes its OWN hop to the container — which lands here and gets REJECTed. The
+# client sees the connection accepted and then closed, i.e. an EOFException
+# mid-handshake rather than "connection refused". That is what broke
+# `./dev.sh` (bootRun -> jdbc:postgresql://localhost:5432) while Testcontainers
+# kept working, since Testcontainers connects via the bridge gateway address,
+# which is LOCAL-but-not-loopback and so does get DNAT'd in-kernel.
+#
+# Matched by interface rather than subnet so compose networks created after
+# this script runs are covered too. This does not widen internet egress: these
+# interfaces only reach containers on this machine, and FORWARD stays DROP.
+iptables -A OUTPUT -o docker0 -j ACCEPT
+iptables -A OUTPUT -o br+ -j ACCEPT
 
 # Explicitly REJECT all other outbound traffic for immediate feedback
 iptables -A OUTPUT -j REJECT --reject-with icmp-admin-prohibited
