@@ -78,13 +78,22 @@
   // performance hint and a no-op elsewhere.
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
   "workspaceFolder": "/workspace",
+  // A real `docker run -p`, which Docker Desktop maps to 0.0.0.0:8080 on the
+  // Mac — so the dev server is reachable from a phone on the same wifi. This
+  // is NOT the same mechanism as VS Code's "forwardPorts", which only ever
+  // binds the host's loopback and so can't serve anything off-machine.
+  "appPort": ["8080:8080"],
+  // Stop VS Code from auto-forwarding every port it notices onto the Mac's
+  // loopback. It does that silently, and a forwarded port is a held port: with
+  // 8080 and 5432 taken by the forwarder, running ./dev.sh on the Mac fails
+  // with "address already in use" and nothing says why. Ports we actually want
+  // published are declared above, deliberately.
+  "otherPortsAttributes": { "onAutoForward": "ignore" },
   // Pull postgres + the Testcontainers sidecar (ryuk, which it spins up
-  // automatically to clean up test containers) once, before the firewall
-  // locks egress down, so a `./gradlew test` run never needs a live pull
-  // once the allowlist is enforced. Runs once per container creation, not
-  // per start. If Testcontainers' ryuk version bumps, this tag will drift
-  // out of sync — check the pull error for the version it actually wants.
+  // automatically to clean up test containers) once, so a `./gradlew test` run
+  // isn't waiting on a live pull. Runs once per container creation, not per
+  // start. If Testcontainers' ryuk version bumps, this tag will drift out of
+  // sync — check the pull error for the version it actually wants.
   "postCreateCommand": "docker pull postgres:17 && docker pull testcontainers/ryuk:0.11.0",
-  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
-  "waitFor": "postStartCommand"
+  "waitFor": "postCreateCommand"
 }

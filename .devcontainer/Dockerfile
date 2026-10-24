@@ -12,9 +12,10 @@ ARG CLAUDE_CODE_VERSION=latest
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
-# Install basic development tools and iptables/ipset for the egress firewall.
-# Java itself comes from the `java` devcontainer feature (see devcontainer.json),
-# not from here — that keeps the JDK version in one place instead of two.
+# Install basic development tools. Java itself comes from the `java` devcontainer
+# feature (see devcontainer.json), not from here — that keeps the JDK version in
+# one place instead of two. iptables stays: dockerd needs it to manage the nested
+# daemon's bridge NAT and published ports, independent of any firewall of ours.
 RUN apt-get update && apt-get install -y --no-install-recommends \
   less \
   git \
@@ -27,10 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   gnupg2 \
   gh \
   iptables \
-  ipset \
   iproute2 \
   dnsutils \
-  aggregate \
   jq \
   nano \
   vim \
@@ -91,14 +90,7 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 
-# Copy and set up firewall script
-COPY init-firewall.sh /usr/local/bin/
-USER root
-RUN chmod +x /usr/local/bin/init-firewall.sh && \
-  echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
-  chmod 0440 /etc/sudoers.d/node-firewall
-
-# Deliberately NOT switching back to USER node here. The docker-in-docker
+# Deliberately leaving root as the image's default user. The docker-in-docker
 # feature's entrypoint script (/usr/local/share/docker-init.sh) needs to run
 # as root to start dockerd — if it isn't already root it falls back to
 # `sudo /bin/sh -c "<dynamically-built dockerd command>"`, and that command
@@ -110,3 +102,4 @@ RUN chmod +x /usr/local/bin/init-firewall.sh && \
 # "remoteUser": "node" is what governs the shell you actually get and what
 # `claude --dangerously-skip-permissions` runs as (which refuses to run as
 # root regardless of what PID 1 is).
+USER root
